@@ -1,9 +1,10 @@
 # specctl — Implementation Specification
 
 **Version:** 2.0 · **Date:** 2026-09-21 · **Status:** Normative
-**Supersedes:** `A-solution-spec-handoff.md` v1.0 — which is retained as history and MUST NOT be implemented from.
+**Supersedes:** `archive/A-solution-spec-handoff.md` v1.0 — which is retained as history and MUST NOT be implemented from.
 **Audience:** implementer (human or coding agent). §1.5 is for the solution owner.
-**Companions:** `B-limitations-roadmap.md` — what this phase deliberately does not do, and when to extend it. `C-spec-gaps.md` — the 31 findings against v1.0 that this document resolves; read it only to understand *why* a rule is what it is.
+**Companions:** `B-limitations-roadmap.md` — what this phase deliberately does not do, and when to extend it. `archive/C-spec-gaps.md` — the 31 findings against v1.0 that this document resolves; read it only to understand *why* a rule is what it is.
+**Đọc trước:** `F-features.md` — vấn đề, phương pháp, và thứ tự tính năng. Tài liệu này là phần chi tiết kỹ thuật phía sau nó.
 
 ---
 
@@ -50,7 +51,7 @@ One prefix, one meaning, throughout:
 | `ACC-1`–`ACC-9`                                                 | Acceptance thresholds         | §19       |
 | `snake_case`                                                       | Coverage issue and skip codes | Appendix B |
 
-`SYS-000120` and similar are **block IDs** — data, not document references (§5). `GAP-nn` refers to `C-spec-gaps.md` and appears only in Appendix G.
+`SYS-000120` and similar are **block IDs** — data, not document references (§5). `GAP-nn` refers to `archive/C-spec-gaps.md` and appears only in Appendix G.
 
 ### 1.5 Owner inputs required
 
@@ -1694,7 +1695,7 @@ Dependencies: `python-docx`, `lxml`, `typer`, `openpyxl`, `pyyaml`, `rapidfuzz`,
 
 ### Appendix G — Traceability
 
-**G.1 Gap resolutions.** Every finding in `C-spec-gaps.md` and where it is resolved here.
+**G.1 Gap resolutions.** Every finding in `archive/C-spec-gaps.md` and where it is resolved here.
 
 | Gap                              | Resolved in                   |
 | -------------------------------- | ----------------------------- |
