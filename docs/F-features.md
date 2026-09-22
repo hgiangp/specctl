@@ -223,13 +223,24 @@ Ba quyết định này ghi ở `G-data-contract.md`, quy tắc đã áp vào D 
 |---|---|
 | Ca **hỏng có chủ ý** — ví dụ một bảng không serialize được bằng cả hai dạng, để kiểm chứng đường hạ cấp ở F10 | Word luôn ghi ra OOXML hợp lệ. Không gõ tay được một file cố ý sai |
 | Ca **hồi quy phát hiện về sau** — chạy trên tài liệu thật thấy một lỗi, cần viết ngay một ca tối thiểu tái hiện nó | Quay lại Word gõ từng ca mới là vòng lặp chậm, và ca đó thành file nhị phân không review được qua diff |
+| **File thế chỗ** cho ba file Word chưa có, để nhóm B không bị chặn (thêm vào lúc implement — xem phần trạng thái) | Không phải Word không làm được, mà là chưa ai gõ. Đây là giải pháp tạm, không thay được đường chính |
 
 **Chặn:** thất bại 1.
 **Xong khi:** bảy ca kể trên có file tương ứng và bộ đọc chạy được trên tất cả; đường hạ cấp ở F10 có một ca hỏng có chủ ý để kiểm chứng.
 
-**Trạng thái: hạ tầng xong, chờ 3 file Word.** Đã có: bộ sinh OOXML (kèm ca hỏng có chủ ý, tất định từng byte), registry mô tả từng file phải chứa gì, `tests/fixtures/README.md` ghi nguồn gốc, và `.gitattributes` đánh dấu `*.docx` là binary.
+**Trạng thái: xong, nhưng 3 file Word vẫn còn nợ.** 330 test xanh (321 khi không có pandoc). Bảy ca khó đều có file chứa nó trên đĩa, và bộ đọc chạy được trên tất cả — đó là tiêu chí "xong khi" ở trên. Ca hỏng có chủ ý cho F10 đã commit.
 
-Phần đáng nêu nhất: **nội dung file được kiểm tra, không phải chỉ tên file.** `tests/test_fixtures.py` đọc thẳng OOXML và báo đúng construct nào thiếu, vì Word thường không lưu đúng cái người viết nghĩ:
+**Cách giải quyết chỗ kẹt.** Đường chính vẫn là gõ tay trong Word, và không có gì thay được nó. Nhưng để F04 chặn cả nhóm B trong lúc chờ là trả giá quá đắt, nên mỗi file Word giờ có một **file thế chỗ** sinh từ OOXML thuần (`built_constructs.docx`, `built_revisions.docx`, `built_containers.docx`), commit vào repo. Ba điểm làm cho nó không biến thành cái cớ để không giao file thật:
+
+- **Một danh sách yêu cầu, hai file.** File thế chỗ và file Word dùng chung đúng một danh sách trong `tests/support/fixtures.py` — nó không thể âm thầm bao phủ ít hơn phần file Word phải bao phủ. Có test kiểm chính điều đó.
+- **File Word thắng ngay khi có.** `require("constructs.docx")` trả về file Word nếu nó tồn tại, không thì trả file thế chỗ. Giao file thật không phải sửa một dòng test nào.
+- **Test vẫn báo còn nợ.** File thế chỗ không phải một lần giao hàng. `test_fixtures.py` vẫn liệt kê ba file Word còn thiếu mỗi lần chạy.
+
+**Cái mà file sinh ra không chứng minh được — và một bug thật lộ ra từ đó.** File sinh chứng minh bộ đọc xử lý được một construct; nó **không** chứng minh construct đó đúng hình dạng Word ghi ra, vì `lxml` đọc được mọi XML hợp cú pháp. Đem hỏi một bộ đọc độc lập (pandoc) thì ra ngay: bộ sinh đang ghi track changes dưới dạng bọc cả `w:p` trong một `w:ins`. Dạng đó parse được, qua được kiểm tra `//w:ins`, và **bị pandoc bỏ im lặng** — trong khi Word ghi `w:ins` ở mức run, bên trong `w:p`, còn dấu kết đoạn được đánh dấu riêng ở `w:pPr/w:rPr`.
+
+Nếu không bắt được, F05 sẽ được viết theo một hình dạng Word không bao giờ tạo ra: xanh hết trên fixture, và **mất đoạn văn được chèn** trên tài liệu customer. Đúng thất bại 1, đúng dạng im lặng nhất của nó. Đã sửa bộ sinh, thêm một yêu cầu bắt buộc về hình dạng run-level, và một test hỏi thẳng bộ đọc độc lập thay vì hỏi parser của chính mình.
+
+Phần đáng nêu tiếp theo: **nội dung file được kiểm tra, không phải chỉ tên file.** `tests/test_fixtures.py` đọc thẳng OOXML và báo đúng construct nào thiếu, vì Word thường không lưu đúng cái người viết nghĩ:
 
 | Việc vô tình làm | Kết quả |
 |---|---|
@@ -239,6 +250,8 @@ Phần đáng nêu nhất: **nội dung file được kiểm tra, không phải 
 | Chèn ảnh bằng "link to file" | Không có phần ảnh nào trong package |
 
 Mỗi trường hợp trên về sau sẽ hiện ra dưới dạng "bộ đọc làm mất chữ", và bộ đọc bị quy trách nhiệm cho một construct chưa từng có trong file. Kiểm tra đặt lỗi về đúng chỗ gây ra nó.
+
+Cuối cùng: **file nhị phân commit vào repo là thứ không ai review được** — nên mọi file sinh ra đều phải tái tạo được. `python scripts/build_fixtures.py --check` so từng part của file đã commit với một lần build mới. Sửa tay một file `.docx` là thay đổi duy nhất mà không một diff nào cho thấy.
 
 ---
 
@@ -512,7 +525,7 @@ Ba thứ không phải implementer quyết được:
 | Cần gì | Chặn tính năng nào | Nếu chậm thì sao |
 |---|---|---|
 | **File Word thật** đặt vào repo | F11, và mọi con số về sau | Chỉ đo được trên tài liệu thử. Nhóm A vẫn làm được bình thường |
-| **Bộ file `.docx` test** gõ tay trong Word, mỗi file một ca khó (xem F04) | F05 | Bộ đọc không có gì để kiểm chứng. Đây là việc chỉ làm một lần, và nên làm sớm vì nó chặn cả nhóm B |
+| **Bộ file `.docx` test** gõ tay trong Word, mỗi file một ca khó (xem F04) | Không còn chặn F05, nhưng vẫn cần | Đã có file thế chỗ sinh từ OOXML thuần nên nhóm B làm được. Cái còn thiếu là bằng chứng bộ đọc chạy đúng trên OOXML **Word thật sự ghi ra** — và một số ca (SmartArt, OLE object, content control thật) chỉ Word tạo được. Việc chỉ làm một lần, nên làm sớm |
 | **Xác nhận của customer** về việc đưa nội dung spec qua model trên cloud, ghi thành văn bản | F15 | Rẻ nhất để có, chặn sớm nhất. Chưa có thì không mở phiên agent nào trên nội dung thật |
 | **Ngưỡng độ trung thực** được thoả thuận | F11 | Phép đo chạy được nhưng không có mốc để kết luận đạt hay không |
 | **Cấu trúc mục tiêu** kèm một ví dụ trước/sau thật | F23 | Không viết được kỹ năng sắp xếp lại. Đến nhóm E mới cần, nên còn thời gian |

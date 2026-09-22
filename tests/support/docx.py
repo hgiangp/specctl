@@ -52,6 +52,11 @@ CONTENT_TYPE = {
     "styles": "application/vnd.openxmlformats-officedocument.wordprocessingml.styles+xml",
 }
 
+REL_TYPE = {
+    kind: f"http://schemas.openxmlformats.org/officeDocument/2006/relationships/{kind}"
+    for kind in ("numbering", "footnotes", "comments", "header", "footer", "image", "styles")
+}
+
 _XML_DECL = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n'
 
 _NS_DECL = " ".join(
@@ -166,17 +171,29 @@ def paragraph(
     num_id: int | None = None,
     ilvl: int = 0,
     runs: str | None = None,
+    mark_revision: str | None = None,
 ) -> str:
-    """One `w:p`. `runs` replaces the text with raw run XML when a construct needs it."""
+    """One `w:p`. `runs` replaces the text with raw run XML when a construct needs it.
+
+    `mark_revision` is raw XML for the paragraph mark's own `w:rPr` — how Word records
+    that the paragraph *mark* was inserted or deleted, which is what makes a whole
+    paragraph, rather than a run inside it, a tracked change.
+
+    The properties are emitted in schema order (`pStyle`, `numPr`, `outlineLvl`, `rPr`).
+    Order is not decoration here: the fixtures exist to look like what Word writes, and a
+    walker tuned to a shape Word never emits is a walker that works only on the fixtures.
+    """
     props: list[str] = []
     if style:
         props.append(f'<w:pStyle w:val="{style}"/>')
-    if outline_level is not None:
-        props.append(f'<w:outlineLvl w:val="{outline_level}"/>')
     if num_id is not None:
         props.append(
             f'<w:numPr><w:ilvl w:val="{ilvl}"/><w:numId w:val="{num_id}"/></w:numPr>'
         )
+    if outline_level is not None:
+        props.append(f'<w:outlineLvl w:val="{outline_level}"/>')
+    if mark_revision is not None:
+        props.append(f"<w:rPr>{mark_revision}</w:rPr>")
     prop_xml = f"<w:pPr>{''.join(props)}</w:pPr>" if props else ""
     body = runs if runs is not None else (run(text) if text else "")
     return f"<w:p>{prop_xml}{body}</w:p>"
@@ -255,24 +272,40 @@ def content_control(inner: str) -> str:
     )
 
 
+def _revision_attrs(rev_id: int, author: str) -> str:
+    return f'w:id="{rev_id}" w:author="{esc(author)}" w:date="2026-01-01T00:00:00Z"'
+
+
 def tracked_insertion(text: str, *, author: str = "Reviewer", rev_id: int = 1) -> str:
-    """`w:ins` — current content, MUST be emitted (W1)."""
-    return (
-        f'<w:ins w:id="{rev_id}" w:author="{author}" w:date="2026-01-01T00:00:00Z">'
-        f"{paragraph(text)}</w:ins>"
+    """A whole paragraph inserted with Track Changes on — current content, MUST be
+    emitted (W1).
+
+    Written the way Word writes it: `w:ins` is a **run-level** element inside the
+    paragraph, and the inserted paragraph *mark* is recorded separately in `w:pPr/w:rPr`.
+    Wrapping a `w:p` in a `w:ins` instead produces a file that parses but that Word never
+    emits — and readers do drop it, so a walker built against that shape would pass the
+    fixtures and lose inserted requirements on the real document.
+    """
+    return paragraph(
+        mark_revision=f"<w:ins {_revision_attrs(rev_id, author)}/>",
+        runs=f"<w:ins {_revision_attrs(rev_id + 1, author)}>{run(text)}</w:ins>",
     )
 
 
-def tracked_deletion(text: str, *, author: str = "Reviewer", rev_id: int = 2) -> str:
-    """`w:del` with `w:delText` — NOT current content, MUST be discarded (W1).
+def tracked_deletion(text: str, *, author: str = "Reviewer", rev_id: int = 3) -> str:
+    """A whole paragraph deleted with Track Changes on — NOT current content, MUST be
+    discarded (W1).
 
     A walker that merely collects `w:t` descendants misses that `w:delText` is a
-    different element and emits deleted text as a live requirement.
+    different element and emits deleted text as a live requirement. Same run-level shape
+    as `tracked_insertion`, for the same reason.
     """
-    return (
-        f'<w:del w:id="{rev_id}" w:author="{author}" w:date="2026-01-01T00:00:00Z">'
-        f'<w:p><w:r><w:delText xml:space="preserve">{esc(text)}</w:delText></w:r></w:p>'
-        "</w:del>"
+    deleted_run = (
+        f'<w:r><w:delText xml:space="preserve">{esc(text)}</w:delText></w:r>'
+    )
+    return paragraph(
+        mark_revision=f"<w:del {_revision_attrs(rev_id, author)}/>",
+        runs=f"<w:del {_revision_attrs(rev_id + 1, author)}>{deleted_run}</w:del>",
     )
 
 
@@ -311,7 +344,252 @@ def footnote_reference(footnote_id: int = 2) -> str:
     return f'<w:p><w:r><w:footnoteReference w:id="{footnote_id}"/></w:r></w:p>'
 
 
+# --------------------------------------------------------------------- separate parts
+
+# A 1x1 opaque PNG, written out literally rather than compressed at build time: the
+# fixtures are committed, so every byte of them has to be the same on every machine.
+PNG_1X1 = (
+    b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x01\x00\x00\x00\x01"
+    b"\x08\x02\x00\x00\x00\x90wS\xde\x00\x00\x00\x0cIDATx\xdachhh\x00"
+    b"\x00\x03\x04\x01\x81u.\x01\xbc\x00\x00\x00\x00IEND\xaeB`\x82"
+)
+
+
+def numbering_part(*, decimal_num_id: int = 1, bullet_num_id: int = 2) -> str:
+    """`word/numbering.xml` with one decimal list and one bullet list.
+
+    F06 recomputes list numbers from these definitions, because the number Word shows is
+    not in the text of the file. Two `numId`s, because a numbered list and a bulleted
+    list are two different ones.
+    """
+    def abstract(abstract_id: int, fmt: str, text: str) -> str:
+        return (
+            f'<w:abstractNum w:abstractNumId="{abstract_id}"><w:lvl w:ilvl="0">'
+            '<w:start w:val="1"/>'
+            f'<w:numFmt w:val="{fmt}"/><w:lvlText w:val="{text}"/>'
+            '<w:lvlJc w:val="left"/></w:lvl></w:abstractNum>'
+        )
+
+    return (
+        f"<w:numbering {_NS_DECL}>"
+        + abstract(0, "decimal", "%1.")
+        + abstract(1, "bullet", "\u2022")
+        + f'<w:num w:numId="{decimal_num_id}"><w:abstractNumId w:val="0"/></w:num>'
+        + f'<w:num w:numId="{bullet_num_id}"><w:abstractNumId w:val="1"/></w:num>'
+        + "</w:numbering>"
+    )
+
+
+def footnotes_part(notes: Mapping[int, str]) -> str:
+    """`word/footnotes.xml`. Without this part the footnote *text* was never saved."""
+    separators = "".join(
+        f'<w:footnote w:type="{kind}" w:id="{note_id}">'
+        f"{paragraph(runs=f'<w:r><w:{kind}/></w:r>')}</w:footnote>"
+        for note_id, kind in ((-1, "separator"), (0, "continuationSeparator"))
+    )
+    bodies = "".join(
+        f'<w:footnote w:id="{note_id}">{paragraph(text)}</w:footnote>'
+        for note_id, text in sorted(notes.items())
+    )
+    return f"<w:footnotes {_NS_DECL}>{separators}{bodies}</w:footnotes>"
+
+
+def comments_part(comments: Mapping[int, str], *, author: str = "Reviewer") -> str:
+    """`word/comments.xml`. The commented text stays; the comment itself is discarded
+    and counted (§10.5 W3)."""
+    bodies = "".join(
+        f'<w:comment w:id="{comment_id}" w:author="{esc(author)}" w:initials="R" '
+        f'w:date="2026-01-01T00:00:00Z">{paragraph(text)}</w:comment>'
+        for comment_id, text in sorted(comments.items())
+    )
+    return f"<w:comments {_NS_DECL}>{bodies}</w:comments>"
+
+
+def header_part(text: str) -> str:
+    """`word/header1.xml`. Skipped with a count by W5, not silently."""
+    return f"<w:hdr {_NS_DECL}>{paragraph(text)}</w:hdr>"
+
+
+def footer_part(text: str) -> str:
+    """`word/footer1.xml`. Skipped with a count by W5, not silently."""
+    return f"<w:ftr {_NS_DECL}>{paragraph(text)}</w:ftr>"
+
+
+def comment_range(comment_id: int, inner: str) -> str:
+    """Runs wrapped in a comment range, plus the reference mark Word puts after it."""
+    return (
+        f'<w:commentRangeStart w:id="{comment_id}"/>{inner}'
+        f'<w:commentRangeEnd w:id="{comment_id}"/>'
+        f'<w:r><w:commentReference w:id="{comment_id}"/></w:r>'
+    )
+
+
+def section_properties(*, header_rel: str | None = None, footer_rel: str | None = None) -> str:
+    """The trailing `w:sectPr`, which is what actually attaches a header and a footer."""
+    references = ""
+    if header_rel:
+        references += f'<w:headerReference w:type="default" r:id="{header_rel}"/>'
+    if footer_rel:
+        references += f'<w:footerReference w:type="default" r:id="{footer_rel}"/>'
+    return (
+        f"<w:sectPr>{references}"
+        '<w:pgSz w:w="11906" w:h="16838"/>'
+        '<w:pgMar w:top="1417" w:right="1417" w:bottom="1417" w:left="1417" '
+        'w:header="708" w:footer="708" w:gutter="0"/>'
+        "</w:sectPr>"
+    )
+
+
 # --------------------------------------------------------------------------- fixtures
+
+def construct_document() -> DocxPackage:
+    """Every construct §6.4 has a representation for, in one package.
+
+    Stands in for the hand-authored `constructs.docx` until Word-authored fixtures land
+    (see `tests/fixtures/README.md`). The prose carries real quantities and units, so the
+    same file is usable later as input to the numeric diff of §12.
+    """
+    numbered = "".join(
+        paragraph(text, num_id=1)
+        for text in (
+            "The system shall sample the pedal signal every 10 ms.",
+            "The system shall report a fault within 200 ms of detection.",
+        )
+    )
+    bulleted = "".join(
+        paragraph(text, num_id=2)
+        for text in (
+            "Nominal supply voltage is 12 V.",
+            "Threshold hysteresis is 250 mV, measured at the connector.",
+        )
+    )
+    simple = table(
+        [
+            row(cell("Signal"), cell("Range"), cell("Unit")),
+            row(cell("PedalPos"), cell("0 to 100"), cell("percent")),
+            row(cell("BrakePressure"), cell("0 to 250"), cell("bar")),
+        ],
+        columns=3,
+    )
+    merged = table(
+        [
+            row(cell("Operating conditions", grid_span=2), cell("Limit")),
+            row(cell("Temperature", v_merge="restart"), cell("Minimum"), cell("-40 degC")),
+            row(cell("", v_merge="continue"), cell("Maximum"), cell("85 degC")),
+        ],
+        columns=3,
+    )
+    body = (
+        heading(1, "Scope")
+        + paragraph(
+            "This document specifies the braking subsystem interface and its timing."
+        )
+        + heading(2, "Timing requirements")
+        + numbered
+        + heading(3, "Electrical thresholds")
+        + bulleted
+        + simple
+        + merged
+        + image_paragraph()
+        + paragraph("Figure 1 shows the signal chain from pedal to actuator.")
+        + text_box(
+            "Note in a text box: the actuator is disabled below 9 V of supply voltage."
+        )
+        + equation("E = mc^2")
+        + paragraph(runs=bookmark("_Ref_thresholds") + run("Signal thresholds are listed here."))
+        + paragraph(
+            runs=run("Braking force is applied once the pedal exceeds the threshold in ")
+            + ref_field("_Ref_thresholds", "section 1.3")
+            + run(".")
+        )
+        + footnote_reference(2)
+        + section_properties()
+    )
+    return DocxPackage(
+        body=body,
+        parts={
+            "numbering.xml": numbering_part(),
+            "footnotes.xml": footnotes_part(
+                {2: "Measured at 25 degC unless stated otherwise."}
+            ),
+        },
+        relationships=[
+            ("rIdNum", REL_TYPE["numbering"], "numbering.xml"),
+            ("rIdFootnotes", REL_TYPE["footnotes"], "footnotes.xml"),
+            ("rIdImg", REL_TYPE["image"], "media/image1.png"),
+        ],
+        binaries={"media/image1.png": PNG_1X1},
+    )
+
+
+def revisions_document() -> DocxPackage:
+    """One tracked insertion, one tracked deletion, one comment — saved unaccepted.
+
+    Stands in for the hand-authored `revisions.docx`. The deletion is the point: `w:delText`
+    is a different element from `w:t`, so a walker that collects `w:t` descendants emits
+    deleted text as a live requirement (§10.5 W1). That is content fabricated by parsing
+    rather than by hallucination, and no AI is involved in it at all.
+    """
+    body = (
+        heading(1, "Revision handling")
+        + paragraph("This paragraph is untouched and must be emitted exactly once.")
+        + tracked_insertion(
+            "The watchdog shall reset the controller after 100 ms without a heartbeat."
+        )
+        + tracked_deletion(
+            "The watchdog shall reset the controller after 500 ms without a heartbeat."
+        )
+        + paragraph(
+            runs=comment_range(
+                1, run("The supply rail shall remain within 11 V to 15 V during cranking.")
+            )
+        )
+        + section_properties()
+    )
+    return DocxPackage(
+        body=body,
+        parts={"comments.xml": comments_part({1: "Confirm the cranking range with the OEM."})},
+        relationships=[("rIdComments", REL_TYPE["comments"], "comments.xml")],
+    )
+
+
+def containers_document() -> DocxPackage:
+    """Wrappers to see through, and content to skip.
+
+    Stands in for the hand-authored `containers.docx`. The content control is a wrapper —
+    the walker descends through it (W6); the TOC field, the header and the footer are
+    skipped **with counts** (W4, W5), so what was dropped on purpose sits next to what
+    was kept.
+    """
+    body = (
+        toc_field(["1 Scope", "2 Requirements", "3 Interfaces"])
+        + heading(1, "Scope")
+        + content_control(
+            paragraph(
+                "This paragraph sits inside a rich text content control and is ordinary "
+                "requirement text."
+            )
+        )
+        + heading(1, "Requirements")
+        + content_control(
+            paragraph("The diagnostic session shall time out after 5 s of inactivity.")
+            + paragraph("Timeout is measured from the last accepted request.")
+        )
+        + paragraph("A plain paragraph after the content controls, to prove nothing is eaten.")
+        + section_properties(header_rel="rIdHeader", footer_rel="rIdFooter")
+    )
+    return DocxPackage(
+        body=body,
+        parts={
+            "header1.xml": header_part("SYS specification - confidential"),
+            "footer1.xml": footer_part("Page 1 of 3"),
+        },
+        relationships=[
+            ("rIdHeader", REL_TYPE["header"], "header1.xml"),
+            ("rIdFooter", REL_TYPE["footer"], "footer1.xml"),
+        ],
+    )
+
 
 def malformed_table_document() -> DocxPackage:
     """A table that cannot be serialized as a pipe table **or** as HTML (§10.6).
@@ -346,6 +624,17 @@ def malformed_table_document() -> DocxPackage:
 def part_names(path: Path) -> list[str]:
     with zipfile.ZipFile(path) as archive:
         return sorted(archive.namelist())
+
+
+def parts_of(path: Path) -> dict[str, bytes]:
+    """Every part of a package, by name.
+
+    Used to compare a committed fixture with a fresh build. Parts are compared rather than
+    whole-file bytes because the zip container's compressed bytes can differ between zlib
+    builds, while the parts inside it are what the fixture actually *is*.
+    """
+    with zipfile.ZipFile(path) as archive:
+        return {name: archive.read(name) for name in archive.namelist()}
 
 
 def read_part(path: Path, name: str) -> bytes:

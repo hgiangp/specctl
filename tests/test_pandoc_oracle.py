@@ -190,3 +190,76 @@ def test_pandoc_handles_word_style_tracked_changes(tmp_path: Path) -> None:
     text = pandoc.convert(path).text
     assert "Inserted sentence here." in text
     assert "Deleted sentence here." not in text
+
+
+def test_the_revisions_fixture_really_carries_word_style_tracked_changes() -> None:
+    """The fixture itself, checked against an independent reader.
+
+    `test_pandoc_handles_word_style_tracked_changes` proves pandoc understands the shape
+    Word writes. This proves the shape in `tests/fixtures/` **is** that shape — which is a
+    different claim, and the one that was wrong: the builder used to wrap a whole `w:p`
+    inside a `w:ins`, a file that parses with lxml, satisfies an `//w:ins` check, and is
+    silently dropped by every reader that follows the schema. A walker developed against
+    it would have passed here and lost inserted requirements on the customer's document.
+
+    Expectations come from the fixture's own XML, so this keeps working unchanged when the
+    hand-authored `revisions.docx` replaces the stand-in.
+    """
+    from .support.fixtures import require
+
+    path = require("revisions.docx")
+    inserted = [normalize(t.text or "") for t in D.xpath(path, "//w:ins//w:t")]
+    deleted = [normalize(t.text or "") for t in D.xpath(path, "//w:delText")]
+    assert inserted and deleted, "the fixture must carry both an insertion and a deletion"
+
+    accepted = normalize(pandoc.convert(path, track_changes="accept").text)
+    rejected = normalize(pandoc.convert(path, track_changes="reject").text)
+
+    for text in inserted:
+        assert covered(text, accepted), (
+            f"an independent reader lost the tracked insertion {text!r} at accept. "
+            "The fixture is not in the run-level form Word writes."
+        )
+        assert not covered(text, rejected)
+    for text in deleted:
+        assert not covered(text, accepted), (
+            f"deleted text {text!r} survived accept — W1 says it is not current content"
+        )
+        assert covered(text, rejected)
+
+
+@pytest.mark.parametrize(
+    "name", ["built_constructs.docx", "built_revisions.docx", "built_containers.docx"]
+)
+def test_an_independent_reader_can_open_every_built_stand_in(name: str) -> None:
+    """The evidence the stand-ins rest on.
+
+    A package assembled by hand is only useful if it is the OOXML Word writes, not OOXML
+    that happens to satisfy our own parser — lxml will read anything well-formed, so it
+    cannot tell the difference. Pandoc can: it implements the schema, and it is the reader
+    that exposed the tracked-changes shape as wrong.
+
+    Text-box content is excluded because pandoc losing it is recorded behaviour
+    (`test_pandoc_loses_text_box_content`), not a defect in the fixture.
+    """
+    from .support.fixtures import BY_NAME
+
+    path = BY_NAME[name].path
+    result = pandoc.convert(path)
+    assert result.returncode == 0, f"pandoc refused {name}: {result.stderr}"
+
+    w = D.NS["w"]
+    haystack = normalize(result.text)
+    lost = [
+        segment
+        for paragraph in D.parse_part(path).iter(f"{{{w}}}p")
+        if not any(e.tag == f"{{{w}}}txbxContent" for e in paragraph.iterancestors())
+        and paragraph.find(f".//{{{w}}}txbxContent") is None
+        for segment in [normalize("".join(t.text or "" for t in paragraph.iter(f"{{{w}}}t")))]
+        if segment and not covered(segment, haystack)
+    ]
+    assert not lost, (
+        f"an independent reader recovered nothing for {len(lost)} paragraph(s) of {name}, "
+        "so the package is not the shape a schema-following reader expects:\n"
+        + "\n".join(f"  - {s[:100]!r}" for s in lost)
+    )

@@ -949,6 +949,14 @@ def walk(node, ctx):
 
 *Rationale for W1: a walker that simply collects `w:t` descendants emits deleted text as current requirement text. In a contractual document that is content fabrication arrived at by parsing rather than by hallucination — the failure DEC-03 exists to prevent.*
 
+> **The shape W1 applies to.** `w:ins` and `w:del` are **run-level** elements: Word writes
+> them inside `w:p`, wrapping runs, and records an inserted or deleted paragraph *mark*
+> separately as `w:ins`/`w:del` inside `w:pPr/w:rPr`. A whole `w:p` wrapped in a `w:ins` is
+> well-formed XML that `lxml` reads and an `//w:ins` check accepts, and schema-following
+> readers discard it without a word. The fixture builder emitted exactly that shape until an
+> independent reader was pointed at it; the walker MUST handle the run-level form, and
+> `tests/support/fixtures.py` requires the fixtures to be in it.
+
 ### 10.6 Table representation
 
 A table is **simple** — and therefore a pipe table — if and only if all of:
@@ -1664,7 +1672,26 @@ Every rule and every threshold maps to a named test. No orphans in either direct
 | `revisions.docx`  | Hand-authored: one tracked insertion, one tracked deletion, one comment, **saved without accepting them**                           |
 | `containers.docx` | Hand-authored: paragraphs inside`w:sdt`, a TOC field, a header and a footer                                                             |
 | `degraded.docx`   | **Built from raw OOXML** by `tests/support/docx.py`. Word always writes *valid* OOXML, so a table representable in neither form cannot be authored in it |
+| `built_constructs.docx`, `built_revisions.docx`, `built_containers.docx` | Built from raw OOXML and committed. **Stand-ins** for the three hand-authored files, carrying the same constructs, so §10 is testable while those are outstanding |
 | `simple_*.docx`   | Built from raw OOXML at test time by the same module — headings, lists, simple tables, cross-references                             |
+
+**A stand-in and the fixture it stands in for share one requirement list**, defined once in
+`tests/support/fixtures.py`. A stand-in MUST NOT carry its own shorter list: it would drift
+into covering less than the hand-authored file is required to, and the gap would surface as
+a walker bug months later. `require(name)` resolves to the hand-authored file whenever it is
+present and to the stand-in otherwise, so delivering the Word files switches every test over
+without a line of test code changing. Tests MUST keep reporting the outstanding
+hand-authored files: a stand-in keeps work moving, it does not close the item.
+
+Built fixtures are committed and MUST be reproducible from their builders, which are pure
+functions of constants — `python scripts/build_fixtures.py --check` compares each committed
+package part by part against a fresh build. This is what makes a committed binary reviewable
+at all: a hand-edited fixture is the one change no diff shows.
+
+**What a built fixture cannot settle.** It proves the walker handles a construct; it cannot
+prove the construct is in the shape *Word* emits, because `lxml` reads anything well-formed.
+That question goes to an independent reader (§18.4 pandoc oracle), and it has already
+returned a real answer — see the note under W1 in §10.5.
 
 **Fixture contents are verified, not assumed.** `tests/test_fixtures.py` inspects each
 file's raw OOXML and fails naming the construct that is absent, because Word does not
@@ -1686,6 +1713,23 @@ exists to close. Fixtures are written as raw OOXML and read with `lxml`: one mod
 document, not two.*
 
 ---
+
+### 18.4 The independent-reader oracle
+
+`pandoc` is used as a **test oracle only**. Nothing in `specctl/` imports it, it is not a
+dependency, and every test using it skips when it is absent.
+
+| | |
+|---|---|
+| **Used for** | Arbitration. Text pandoc recovers that our walker does not is a bug in our walker, surfaced on a fixture instead of on the customer's document. It is also the only check that a *built* fixture is the OOXML Word writes rather than OOXML our own parser happens to accept |
+| **Not used for** | Conversion. It drops what it cannot represent **silently** and exits 0, while §6.4 requires a converter that knows it degraded, so the construct survives as a `raw locked fallback` block with its OOXML and a named reason |
+
+Two kinds of test live there. **Recorded baselines** pin what pandoc loses (text box
+content, the cells of a table it cannot represent, a custom list-number prefix) and what it
+handles well (bookmarks, anchored links, run-level tracked changes). A baseline going red
+means pandoc improved — re-run the comparison and re-evaluate rather than deleting the test.
+**Oracles proper** compare our walker against it segment by segment on the fixtures, and
+check that an independent reader can open every built fixture at all.
 
 ## 19. Acceptance thresholds
 

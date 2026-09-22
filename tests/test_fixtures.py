@@ -13,7 +13,18 @@ from pathlib import Path
 import pytest
 
 from .support import docx
-from .support.fixtures import BUILT, HAND_AUTHORED, REGISTRY, ensure_built
+from .support.fixtures import (
+    BUILT,
+    HARD_CASES,
+    HAND_AUTHORED,
+    REGISTRY,
+    STAND_INS,
+    ensure_built,
+    is_substituted,
+    require,
+    resolve,
+    stale_parts,
+)
 
 
 # ------------------------------------------------------------------ presence
@@ -29,7 +40,8 @@ def test_hand_authored_fixtures_are_either_all_present_or_all_absent() -> None:
     """Partial delivery is a mistake; nothing delivered yet is a known state.
 
     Half a fixture set is the dangerous case: the suite goes green on whatever happens to
-    be there and silently stops covering the rest.
+    be there and silently stops covering the rest. A built stand-in is not a delivery —
+    it keeps F05 testable, and this test keeps saying the Word files are still owed.
     """
     present = [f.name for f in HAND_AUTHORED if f.exists()]
     absent = [f.name for f in HAND_AUTHORED if not f.exists()]
@@ -42,9 +54,80 @@ def test_hand_authored_fixtures_are_either_all_present_or_all_absent() -> None:
         )
     if not present:
         pytest.skip(
-            "no hand-authored fixtures committed yet (F04). Expected in tests/fixtures/: "
+            "no hand-authored fixtures committed yet (F04); the built stand-ins are "
+            "carrying the cases meanwhile. Still expected in tests/fixtures/: "
             + ", ".join(f.name for f in HAND_AUTHORED)
         )
+
+
+def test_every_built_fixture_is_committed() -> None:
+    """The built files are the reason F05 is testable at all; they are not optional."""
+    missing = [f.name for f in BUILT if not f.exists()]
+    assert not missing, (
+        f"{', '.join(missing)} missing from tests/fixtures/. "
+        "Run `python scripts/build_fixtures.py`."
+    )
+
+
+@pytest.mark.parametrize("case", HARD_CASES)
+def test_every_hard_case_is_carried_by_a_fixture_that_exists(case: str) -> None:
+    """F04's exit criterion, as a test rather than as a claim.
+
+    Naming the seven hard cases in a document is not coverage; a case is covered when some
+    file on disk actually contains the construct. Checking it here means the criterion
+    cannot quietly stop being true when a fixture is renamed, replaced or removed.
+    """
+    carriers = [
+        fixture.name
+        for fixture in REGISTRY
+        if fixture.exists()
+        and any(r.case == case and r.satisfied_by(fixture.path) for r in fixture.requirements)
+    ]
+    assert carriers, (
+        f"no fixture present in tests/fixtures/ carries the {case!r} case. "
+        "See tests/fixtures/README.md."
+    )
+
+
+@pytest.mark.parametrize("name", sorted(STAND_INS), ids=lambda n: n)
+def test_a_stand_in_is_held_to_the_same_requirements_as_the_file_it_replaces(name: str) -> None:
+    """One requirement list, two files.
+
+    If a stand-in were allowed its own shorter list it would drift into covering less than
+    the Word file must, and the gap would show up as a walker bug months later.
+    """
+    assert BUILT and HAND_AUTHORED  # both halves of the registry are populated
+    from .support.fixtures import BY_NAME
+
+    assert STAND_INS[name].requirements is BY_NAME[name].requirements
+
+
+@pytest.mark.parametrize("name", sorted(STAND_INS), ids=lambda n: n)
+def test_the_hand_authored_file_wins_as_soon_as_it_lands(name: str) -> None:
+    """Delivering the Word files must not need a line of test code changed."""
+    from .support.fixtures import BY_NAME
+
+    resolved = resolve(name)
+    assert resolved is not None, f"neither {name} nor its stand-in is present"
+    if BY_NAME[name].exists():
+        assert resolved.name == name and not is_substituted(name)
+    else:
+        assert resolved.name == STAND_INS[name].name and is_substituted(name)
+    assert require(name) == resolved.path
+
+
+@pytest.mark.parametrize("fixture", BUILT, ids=lambda f: f.name)
+def test_a_committed_built_fixture_still_matches_its_builder(fixture, tmp_path: Path) -> None:
+    """What makes a committed binary reviewable: you can regenerate it.
+
+    A difference here means the file was edited by hand — the one change to a fixture that
+    no diff shows and no other test can see.
+    """
+    stale = stale_parts(fixture, tmp_path)
+    assert not stale, (
+        f"tests/fixtures/{fixture.name} differs from what its builder produces, in: "
+        f"{', '.join(stale)}. Run `python scripts/build_fixtures.py`."
+    )
 
 
 # ------------------------------------------------------------------ contents
@@ -75,11 +158,31 @@ def test_each_present_fixture_contains_what_it_promises(fixture) -> None:
 
 def test_the_malformed_table_fixture_is_built_and_complete(tmp_path: Path) -> None:
     """The degrade path is always testable, committed fixture or not."""
+    from .support.fixtures import BY_NAME
+
     path = ensure_built(tmp_path)
     assert docx.is_docx(path)
-    for fixture in BUILT:
-        missing = [r.label for r in fixture.requirements if not r.satisfied_by(path)]
-        assert not missing, f"built fixture lacks {missing}"
+    missing = [
+        r.label for r in BY_NAME["degraded.docx"].requirements if not r.satisfied_by(path)
+    ]
+    assert not missing, f"the malformed-table fixture lacks {missing}"
+
+
+@pytest.mark.parametrize("fixture", BUILT, ids=lambda f: f.name)
+def test_every_built_fixture_can_be_rebuilt_from_scratch(fixture, tmp_path: Path) -> None:
+    """A built fixture that cannot be rebuilt is just a binary nobody can review."""
+    path = fixture.build(tmp_path / fixture.name)
+    assert docx.is_docx(path)
+    missing = [r.label for r in fixture.requirements if not r.satisfied_by(path)]
+    assert not missing, f"{fixture.name} rebuilt without {missing}"
+
+
+@pytest.mark.parametrize("fixture", BUILT, ids=lambda f: f.name)
+def test_every_built_fixture_builds_byte_identically_twice(fixture, tmp_path: Path) -> None:
+    """§9.5, applied to the builder: a rebuilt fixture must not be a spurious diff."""
+    first = fixture.build(tmp_path / "a" / fixture.name).read_bytes()
+    second = fixture.build(tmp_path / "b" / fixture.name).read_bytes()
+    assert first == second
 
 
 def test_neither_table_branch_can_serialize_the_malformed_table(tmp_path: Path) -> None:

@@ -30,13 +30,14 @@ specctl --version          # -> specctl 0.1.0
 pytest
 ```
 
-Kết quả mong đợi **khi chưa có file .docx của bạn**:
+Kết quả mong đợi **khi chưa có file .docx gõ tay trong Word của bạn**:
 
 ```
-296 passed, 8 skipped
+321 passed, 16 skipped     # không cài pandoc
+330 passed,  7 skipped     # có cài pandoc
 ```
 
-8 skip là đúng và có ý nghĩa — xem chúng là gì:
+Skip ở đây là đúng và có ý nghĩa — xem chúng là gì:
 
 ```bash
 pytest -rs          # in lý do của từng skip
@@ -44,10 +45,10 @@ pytest -rs          # in lý do của từng skip
 
 | Skip | Nghĩa là |
 |---|---|
-| 5 skip về fixture | `constructs.docx`, `revisions.docx`, `containers.docx` chưa có trong `tests/fixtures/` |
-| 3 skip về oracle | Test so sánh với pandoc, chờ cùng 3 file đó |
+| 4 skip về fixture | `constructs.docx`, `revisions.docx`, `containers.docx` chưa có trong `tests/fixtures/`. Các file `built_*.docx` đang gánh các ca đó |
+| 9 skip về pandoc | Chưa cài pandoc — xem mục 5 |
 
-Nếu **không có skip nào** và số test khác đi, hoặc có test đỏ, thì có gì đó sai — xem mục 7.
+Nếu **không có skip nào về fixture** thì ba file Word đã có mặt và mọi test đã tự chuyển sang dùng chúng. Nếu có test đỏ, xem mục 7.
 
 ### Chạy từng phần
 
@@ -72,6 +73,20 @@ pytest -k "round_trip or canonical"    # theo tên
 ---
 
 ## 3. Thêm file .docx của bạn
+
+> **Không còn chặn F05.** Mỗi file Word có một **file thế chỗ** sinh từ OOXML thuần đã
+> commit sẵn (`built_constructs.docx`, `built_revisions.docx`, `built_containers.docx`), nên
+> bảy ca khó đều đã có file chứa nó và bộ đọc có cái để chạy. Cái file thế chỗ **không**
+> chứng minh được là bộ đọc chạy đúng trên OOXML mà Word thật sự ghi ra — nên ba file dưới
+> đây vẫn cần, và test vẫn báo là còn thiếu mỗi lần chạy.
+>
+> Ba file thế chỗ sinh ra từ `tests/support/docx.py`, dùng **chung một danh sách yêu cầu**
+> với ba file Word, nên chúng không thể bao phủ ít hơn. Sửa hay dựng lại:
+>
+> ```bash
+> python scripts/build_fixtures.py            # dựng lại
+> python scripts/build_fixtures.py --check    # kiểm file đã commit còn khớp builder không
+> ```
 
 Đặt vào `tests/fixtures/` đúng tên sau:
 
@@ -110,6 +125,8 @@ T-ING-11, §10.5 W1-W2 would not actually be covered:
 Danh sách đầy đủ từng file phải chứa gì: `tests/fixtures/README.md`.
 
 > **Thiếu nửa bộ thì test đỏ, không skip.** Nửa bộ là trạng thái nguy hiểm nhất: suite xanh trên những gì tình cờ có mặt và âm thầm ngừng bao phủ phần còn lại.
+
+Đặt cả ba cùng lúc. Mọi test đang dùng file thế chỗ sẽ **tự chuyển sang file Word ngay khi nó có mặt** — `require()` ưu tiên file gõ tay, không phải sửa một dòng test nào.
 
 Khi commit file `.docx`, `.gitattributes` đã đánh dấu chúng là binary. Đừng bỏ dòng đó — `.docx` là file ZIP, nếu git chuẩn hoá line ending thì archive hỏng, và hỏng vô hình đến khi có gì mở nó.
 
@@ -187,6 +204,13 @@ Có hai loại test trong đó:
 | `test_pandoc_drops_a_custom_list_number_prefix` | `REQ-5.` thành `5.` — mất định danh yêu cầu |
 | `test_pandoc_keeps_bookmarks_and_anchored_links` | Giữ được — phần công bằng cho pandoc |
 | `test_pandoc_handles_word_style_tracked_changes` | Xử lý đúng — phần công bằng cho pandoc |
+
+**Loại 1b — pandoc làm trọng tài cho chính fixture của ta** (chạy được ngay):
+
+| Test | Kiểm cái gì |
+|---|---|
+| `test_an_independent_reader_can_open_every_built_stand_in` | Ba file `built_*.docx` là OOXML thật, không phải OOXML mà chỉ parser của ta chấp nhận. `lxml` đọc được mọi XML hợp cú pháp nên nó **không** trả lời được câu này |
+| `test_the_revisions_fixture_really_carries_word_style_tracked_changes` | Track changes trong fixture đúng hình dạng Word ghi. Chính test này bắt được bug bọc `w:p` trong `w:ins` — parse được, qua được kiểm tra `//w:ins`, và bị bỏ im lặng |
 
 Nếu một test trong nhóm này **đỏ**, nghĩa là pandoc đã cải thiện. Đừng xoá test — chạy lại so sánh và đánh giá lại quyết định.
 
