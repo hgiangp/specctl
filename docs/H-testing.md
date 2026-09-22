@@ -33,8 +33,8 @@ pytest
 Kết quả mong đợi **khi chưa có file .docx gõ tay trong Word của bạn**:
 
 ```
-394 passed,  4 skipped     # có cài pandoc
-381 passed, 17 skipped     # không cài pandoc
+394 passed,  5 skipped     # có cài pandoc
+381 passed, 18 skipped     # không cài pandoc
 ```
 
 Skip ở đây là đúng và có ý nghĩa — xem chúng là gì:
@@ -46,9 +46,23 @@ pytest -rs          # in lý do của từng skip
 | Skip | Nghĩa là |
 |---|---|
 | 4 skip về fixture | `constructs.docx`, `revisions.docx`, `containers.docx` chưa có trong `tests/fixtures/`. Các file `built_*.docx` đang gánh các ca đó, nên test F05 và test oracle **vẫn chạy** |
+| 1 skip về manifest | Chưa ghi `tests/fixtures/manifest.json` — nó chỉ tồn tại khi đã có file Word (mục 8, bước 4) |
 | 13 skip nữa nếu chưa cài pandoc | Pandoc không phải dependency của `specctl` — xem mục 5 |
 
 Nếu **không có skip nào về fixture** thì ba file Word đã có mặt và mọi test đã tự chuyển sang dùng chúng. Nếu số test khác đi, hoặc có test đỏ, xem mục 7.
+
+Năm trạng thái, để đối chiếu nhanh — số đo thật, không ước lượng:
+
+| File Word | manifest | pandoc | Kết quả |
+|---|---|---|---|
+| chưa có | — | chưa cài | `381 passed, 18 skipped` |
+| chưa có | — | đã cài | `394 passed, 5 skipped` ← mặc định của repo, và của CI |
+| đã có | chưa ghi | đã cài | `398 passed, 1 skipped` |
+| đã có | đã ghi | chưa cài | `386 passed, 13 skipped` |
+| **đã có** | **đã ghi** | **đã cài** | **`399 passed, 0 skipped`** ← trạng thái đã nghiệm thu F05 |
+
+Dòng cuối là dòng duy nhất **không có skip nào**. Đó là chủ ý: chừng nào còn một skip thì
+còn một ca chưa ai chạy, và "xong" chưa nói được.
 
 ### Chạy từng phần
 
@@ -99,6 +113,25 @@ tests/fixtures/constructs.docx
 tests/fixtures/revisions.docx
 tests/fixtures/containers.docx
 ```
+
+### File **không** được commit
+
+`.gitignore` chặn `tests/fixtures/*.docx`. Đây là nội dung hợp đồng, nó ở lại trên máy đã
+tạo ra nó. Thứ đi vào repo thay cho nó là `tests/fixtures/manifest.json` — **chỉ chứa
+SHA-256**, không chứa nội dung.
+
+Đổi lại phải chấp nhận hai điều, nói thẳng ra để nó là một quyết định chứ không phải một
+bất ngờ:
+
+| | |
+|---|---|
+| **CI không chạy được** các test cần fixture | Chúng skip ở đó. Cổng thật là máy của bạn, không phải CI |
+| **Không ai khác tái lập được** kết quả | `tests/fixtures/README.md` vẫn là hợp đồng mô tả mỗi file phải chứa gì, nên dựng lại được — nhưng ra file khác byte |
+
+Manifest bù lại đúng một lỗ hổng, và là lỗ hổng nguy hiểm nhất của cách làm này: mở file
+ra sửa rồi lưu lại trong Word, mọi test vẫn xanh, nhưng **nó đã là tài liệu khác** và chữ
+"F05 đã verify" lặng lẽ trỏ sang một đầu vào chưa ai kiểm. Có manifest thì lần chạy sau
+biết mình đang đọc đúng bộ byte đã ký hay không.
 
 Rồi:
 
@@ -263,10 +296,146 @@ pytest tests/test_fixtures.py::test_each_present_fixture_contains_what_it_promis
 
 ---
 
-## 8. Sau khi mọi thứ xanh
+## 8. Nghiệm thu F05 trên máy bạn
 
-Bước tiếp theo là **F06** (đánh số mục) và **F07** (chia file theo section), cả hai đọc luồng khối mà F05 phát ra.
+Đây là quy trình để đóng F05 trước khi bước sang F06. Bốn bước, chạy theo đúng thứ tự —
+mỗi bước chỉ có nghĩa khi bước trước đã xanh.
 
-Việc đáng làm trước cả hai: đặt 3 file `.docx` vào `tests/fixtures/`. 14 test đang skip sẽ chạy, trong đó có `test_our_reader_finds_everything_pandoc_finds` — trọng tài độc lập duy nhất của bộ đọc.
+> **Vì sao không chỉ là `pytest`.** Bộ test xanh nói rằng bộ đọc làm đúng những gì test
+> yêu cầu. Nó **không** nói được rằng test đã yêu cầu hết những gì có trong file. Mà điều
+> F05 khẳng định lại là một mệnh đề phủ định: *không mất gì*. Không ai xác nhận được một
+> mệnh đề phủ định bằng cách nhìn một hàng dấu chấm. Nên bước 2 in ra bằng chứng đúng
+> hình dạng của lời khẳng định đó.
+
+### Bước 1 — File có đúng construct không
+
+```bash
+pytest tests/test_fixtures.py -v
+```
+
+Chạy **trước tiên**, vì nó đặt lỗi về đúng chỗ gây ra lỗi. Word thường không lưu đúng cái
+bạn nghĩ; nếu `w:del` không có trong file thì mọi test track-changes sau đó xanh mà không
+kiểm gì cả, và bộ đọc bị quy trách nhiệm cho một construct chưa từng tồn tại.
+
+Đỏ ở đây → đọc thông báo, nó nêu đúng construct thiếu và cách thêm trong Word. Sửa file,
+đừng sửa test.
+
+> **Thiếu nửa bộ là đỏ, không skip.** Nửa bộ là trạng thái nguy hiểm nhất: suite xanh trên
+> những gì tình cờ có mặt và âm thầm ngừng bao phủ phần còn lại.
+
+### Bước 2 — Cổng nghiệm thu: bộ đọc lấy được những gì
+
+```bash
+python scripts/verify_f05.py
+```
+
+Script **chỉ đọc**, không ghi gì (trừ khi `--record` ở bước 4), không mở kết nối mạng nào.
+
+Nếu chưa có file Word, nó tự chạy trên `built_*.docx` và nói thẳng rằng **như vậy chưa ký
+được F05**:
+
+```
+PASS  built_constructs.docx  (stand-in — does not sign F05 off)
+...
+F05 is NOT signed off. 3 of 3 case(s) were read from a built stand-in.
+```
+
+Đó không phải thủ tục. File dựng bằng XML là OOXML hợp lệ mà lxml chấp nhận; chỉ Word mới
+ghi ra thứ OOXML mà tài liệu của customer được làm bằng, và **đúng chỗ khác nhau giữa hai
+thứ đó là chỗ một bộ đọc mất nội dung mà không nói gì**. Chính session làm F04 đã phát hiện
+builder của chúng tôi ghi tracked change sai hình dạng Word dùng — nó parse được, thoả mọi
+check `//w:ins`, và bị bộ đọc theo schema bỏ im lặng.
+Nếu file là nội dung nhạy cảm:
+
+```bash
+python scripts/verify_f05.py --redact     # in độ dài và vị trí, không in chữ
+```
+
+Với mỗi file nó in ra:
+
+| Dòng | Đọc như thế nào |
+|---|---|
+| `required constructs` | `10/10 present`. Thiếu cái nào là fail, kèm cách thêm |
+| `blocks`, `embedded objects` | Bộ đọc lấy ra cái gì. Đối chiếu với thứ bạn **biết** mình đã gõ vào file — đây là chỗ mắt người làm được việc mà test không |
+| `revisions (W1)` | `kept N, discarded M`. Cả hai phải khớp số lần bạn sửa với Track Changes bật |
+| `tracked deletions` | `N in file, 0 resurrected`. **Khác 0 là hỏng nghiêm trọng** — đoạn đã xoá đang được phát ra như yêu cầu còn hiệu lực |
+| `skipped.toc`, `skipped.header_footer` | Bỏ **có ghi nhận**. Số 0 ở file có mục lục/header nghĩa là quy tắc W4/W5 không chạy |
+| `coverage` | Tỉ lệ đoạn văn trong OOXML gốc tìm lại được. Trên fixture phải là `1.0000` |
+| `uncovered paragraph N` | Từng đoạn không tìm lại được, kèm vị trí. Một con số thấp mà không nói thấp ở đâu thì không hành động được |
+| `pandoc oracle` | Trọng tài độc lập. `clean` = không có đoạn nào pandoc lấy được mà ta không |
+| `determinism` | Đọc hai lần ra kết quả giống nhau |
+
+Mã thoát: `0` đạt, `2` có lỗi, `3` chưa có file.
+
+> **Cổng này biết báo đỏ.** Đã kiểm chứng bằng bốn đường: fixture bị accept track changes
+> trước khi lưu, byte lệch so với manifest, file thiếu, và `--record` trên một lần chạy
+> đỏ (nó từ chối ghi). Một cổng chưa bao giờ đỏ thì chưa biết nó có hoạt động không.
+
+### Bước 3 — Cả bộ test
+
+```bash
+pytest -rs
+```
+
+Mong đợi ở bước này: **398 passed, 1 skipped**. Skip còn lại là manifest — bước 4 khử nó.
+
+So với `394 passed, 5 skipped` của lúc chưa có file Word: 4 test chuyển từ skip sang chạy,
+và — quan trọng hơn con số — mọi test F05 và test oracle **âm thầm chuyển từ stand-in sang
+file Word thật**, không đổi một dòng code test nào (`resolve()` trong
+`tests/support/fixtures.py`). **Nếu số skip không giảm**, file chưa được đọc thấy: kiểm tra
+tên file và thư mục.
+
+### Bước 4 — Ghi manifest và commit
+
+```bash
+python scripts/verify_f05.py --record
+git add tests/fixtures/manifest.json
+git commit -m "F05: record the fixture manifest verified against"
+```
+
+Sau bước này: **399 passed, 0 skipped** — trạng thái đã nghiệm thu, và là trạng thái duy
+nhất không còn skip nào.
+
+`--record` **từ chối ghi** nếu lần chạy đó có lỗi, nên manifest chỉ tồn tại cho một bộ
+file đã đạt. Từ đây `pytest` sẽ báo đỏ nếu byte của fixture đổi:
+
+```
+fixture bytes differ from tests/fixtures/manifest.json:
+  containers.docx: recorded 81ed9f79c91f4916…, found 3dcd0fad66cd626b…
+```
+
+Sửa fixture có chủ ý thì chạy lại bước 2 rồi `--record` lại — để việc đổi là một **quyết
+định**, không phải một lần trôi.
+
+### Checklist: F05 xong khi nào
+
+F05 đóng được khi **cả bảy dòng** dưới đây đúng. Không nới dòng nào — mỗi dòng là một
+đường mất dữ liệu đã biết.
+
+- [ ] `pytest tests/test_fixtures.py` xanh — ba file chứa đủ construct đã hứa
+- [ ] `python scripts/verify_f05.py` thoát `0`, cả ba `PASS` — và **không có dòng `(stand-in)`** nào
+- [ ] `coverage` = `1.0000` trên cả ba, và `uncovered` rỗng
+- [ ] `tracked deletions` = `N in file, 0 resurrected` trên `revisions.docx`, với `N ≥ 1`
+- [ ] `skipped.toc` và `skipped.header_footer` **khác 0** trên `containers.docx` — bỏ có ghi nhận, không phải bỏ im lặng
+- [ ] `pandoc oracle` = `clean` trên cả ba *(cài pandoc nếu chưa — xem mục 5; đây là trọng tài độc lập duy nhất, và bộ đọc tự chấm điểm mình thì không chứng minh được gì)*
+- [ ] `pytest -rs` = `399 passed, 0 skipped`, và `manifest.json` đã commit
+
+### Khi nào **không** được coi là xong
+
+| Triệu chứng | Nghĩa là | Đừng làm gì |
+|---|---|---|
+| `coverage` < 1.0 trên fixture | Bộ đọc đang mất chữ thật | Đừng hạ `--min-coverage`. Xem dòng `uncovered` và sửa bộ đọc |
+| `pandoc oracle` báo thiếu | Pandoc lấy được đoạn mà ta không → **bug của ta** | Đừng xoá test oracle |
+| `resurrected` > 0 | Đoạn đã xoá đang ra như yêu cầu còn hiệu lực | Đây là lỗi nặng nhất trong cả dự án. Dừng lại |
+| `skipped.toc` = 0 mà file có mục lục | W4 không chạy — mục lục đang thành yêu cầu | Kiểm tra mục lục có còn field code không |
+| pandoc chưa cài nên oracle skip | Chưa có trọng tài độc lập | Đừng ký. Cài pandoc, mục 5 |
+| Cổng `PASS` nhưng có `(stand-in)` | Đang chạy trên `built_*.docx`, không phải file Word | Đừng ký. Stand-in giữ cho nhóm B không bị chặn, không thay được F04 |
+
+---
+
+## 9. Sau khi F05 đóng
+
+Bước tiếp theo là **F06** (đánh số mục, §10.3) và **F07** (chia file theo section, §10.9),
+cả hai đọc luồng khối mà F05 phát ra.
 
 Thứ tự đầy đủ các feature: `F-features.md`.

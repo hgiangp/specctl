@@ -9,3 +9,20 @@ dist/
 
 # §4: generated exports are never committed
 exports/
+
+# The three hand-authored fixtures are contractual content and stay on the machine that
+# made them (F04). `tests/fixtures/manifest.json` is committed in their place: it carries
+# their SHA-256 only, so a sign-off can name the exact bytes it was made against without
+# the bytes ever entering the repository.
+#
+# Listed by name rather than as `*.docx`: the built stand-ins (`built_*.docx`,
+# `degraded.docx`) are generated from raw OOXML, carry no customer content, and are
+# committed on purpose so the suite covers those cases while the Word files are
+# outstanding. A wildcard here would quietly fight them.
+#
+# Consequence, stated once so it is a decision and not a surprise: CI never sees the
+# hand-authored files, so it runs against the stand-ins. `tests/fixtures/README.md`
+# remains the contract for what each file must contain.
+tests/fixtures/constructs.docx
+tests/fixtures/revisions.docx
+tests/fixtures/containers.docx

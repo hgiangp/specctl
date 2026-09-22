@@ -54,9 +54,20 @@ python scripts/spike_coverage.py source/SYS.docx --pandoc --json spike.json
 
 Expected baseline with pandoc installed: **394 passed, 4 skipped**; without it, **381 passed,
 17 skipped**. The skips are meaningful — the 4 are the three hand-authored `.docx` fixtures that
-are not committed yet, plus the check that reports them. The walker and oracle tests that used
-to wait on those files now run against the committed `built_*.docx` stand-ins (F04). A
-different count, or zero skips, means something is wrong.
+are not committed, plus the check that reports them. The walker and oracle tests that used to
+wait on those files now run against the committed `built_*.docx` stand-ins (F04). A different
+count, or zero skips, means something is wrong.
+
+**The three hand-authored files are contractual content and never enter the repository.**
+`.gitignore` blocks them by name, and `tests/fixtures/manifest.json` carries their SHA-256 in
+their place — a fixture re-saved in Word otherwise keeps every test green while being a
+different document, and "verified" quietly comes to mean input nobody checked. CI therefore
+cannot run them; the real gate is the owner's machine.
+
+Closing a phase against those fixtures is a procedure, not a `pytest` run — a green suite says
+the reader did what the tests asked, not that the tests asked for everything in the file.
+`docs/H-testing.md` §8 is the four-step sign-off; `scripts/verify_f05.py` is its gate and prints
+the evidence.
 
 There is no linter or formatter configured; `pytest` (`-q --strict-markers`, `testpaths=tests`)
 is the whole gate. `pip install -e` also puts a `specctl` entry point on PATH; `specctl --verbose

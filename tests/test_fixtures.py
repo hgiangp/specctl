@@ -269,3 +269,43 @@ def test_deleted_text_uses_delText_not_t(tmp_path: Path) -> None:
     ).write(tmp_path / "rev.docx")
     assert [t.text for t in docx.xpath(path, "//w:t")] == ["Live."]
     assert [t.text for t in docx.xpath(path, "//w:delText")] == ["Gone."]
+
+
+# ------------------------------------------------------------------ the manifest
+
+def test_present_fixtures_match_the_recorded_manifest() -> None:
+    """The fixtures are not committed (F04 is contractual content), so the repository
+    cannot hold the bytes the sign-off was made against — only their SHA-256.
+
+    Without this, a fixture re-saved in Word keeps passing every test while being a
+    different document, and "F05 verified" quietly comes to refer to input nobody
+    checked. Re-authoring one on purpose is fine; it just has to be re-recorded, so the
+    change is a decision rather than a drift.
+    """
+    import hashlib
+    import json
+
+    from .support.fixtures import FIXTURE_DIR
+
+    manifest_path = FIXTURE_DIR / "manifest.json"
+    if not manifest_path.is_file():
+        pytest.skip(
+            "no fixture manifest recorded yet — run `python scripts/verify_f05.py --record`"
+        )
+    recorded = json.loads(manifest_path.read_text())["sha256"]
+
+    drifted = []
+    for fixture in HAND_AUTHORED:
+        if not fixture.exists() or fixture.name not in recorded:
+            continue
+        digest = hashlib.sha256(fixture.path.read_bytes()).hexdigest()
+        if digest != recorded[fixture.name]:
+            drifted.append(f"  {fixture.name}: recorded {recorded[fixture.name][:16]}…, "
+                           f"found {digest[:16]}…")
+    if drifted:
+        pytest.fail(
+            "fixture bytes differ from tests/fixtures/manifest.json:\n"
+            + "\n".join(drifted)
+            + "\n\nIf the change was intentional, re-verify and re-record:\n"
+              "  python scripts/verify_f05.py --record"
+        )
