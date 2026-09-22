@@ -1,1 +1,11 @@
 .DS_Store
+__pycache__/
+*.py[cod]
+.pytest_cache/
+*.egg-info/
+build/
+dist/
+.venv/
+
+# §4: generated exports are never committed
+exports/

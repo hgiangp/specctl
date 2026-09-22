@@ -181,6 +181,14 @@ Kèm theo — và đây là phần quan trọng hơn cái khung: **hai test hạ
 **Chặn:** thất bại 1 và 3, ở mức cơ chế.
 **Xong khi:** hai test trên chạy trong CI và đang xanh.
 
+**Trạng thái: xong.** 74 test xanh. Vài điểm đáng ghi:
+
+- **Chặn mạng là `autouse` cho cả bộ test**, không chỉ cho test nào nghĩ tới nó. Một thư viện thêm vào sau này chạm mạng đúng một lần trước khi có test đỏ. Bảy test kiểm chính cái guard — vì một guard hỏng mà vẫn im lặng thì còn tệ hơn không có guard.
+- **Bộ băm cây có test cả hai chiều:** không chỉ kiểm hai cây giống nhau thì qua, mà kiểm một bộ ghi có timestamp trôi thì **bị bắt**. Cộng thêm các ca cây khác nhau chỉ bởi một thư mục rỗng, hoặc chỉ bởi đích của symlink.
+- **Thứ tự ưu tiên cấu hình được test cả bốn nguồn trong một lần chạy**, mỗi giá trị đến từ một nguồn khác nhau, và `--verbose` phải in đúng nguồn của từng cái.
+- **Sai chính tả trong file cấu hình là lỗi**, không phải bị bỏ qua — đúng lý do mà quyết định "khai một lần" tồn tại.
+- Hai chỗ §9.2 và §9.4 chưa nói rõ đã được bổ sung vào D: `SPECCTL_<NAME>` thì `<NAME>` là gì (bảng ánh xạ đầy đủ), và một lệnh chưa làm thì thoát bằng mã nào — không thêm mã thứ sáu ngoài bảng.
+
 ### F03 · Thư viện lõi
 
 **Làm gì:** phần mà mọi lệnh đều dùng, nên viết sai ở đây thì sai đồng loạt.

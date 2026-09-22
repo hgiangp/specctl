@@ -730,7 +730,37 @@ out        = "exports/SYS.xlsx"
 compare_to = "SYS-baseline-v0"
 ```
 
-`--verbose` MUST print the fully resolved configuration and the source of each value.
+**Environment variable names.** `<NAME>` is the setting's **flat name**, uppercased — one
+rule, and no ambiguity between sections. The flat name is also what `--verbose` prints and
+what the code exposes, so every setting has exactly one spelling throughout the tool.
+
+| Flat name | `specctl.toml` | Environment variable |
+| --------- | -------------- | -------------------- |
+| `doc_key` | `project.doc_key` | `SPECCTL_DOC_KEY` |
+| `split_level` | `project.split_level` | `SPECCTL_SPLIT_LEVEL` |
+| `default_branch` | `project.default_branch` | `SPECCTL_DEFAULT_BRANCH` |
+| `source` | `project.source` | `SPECCTL_SOURCE` |
+| `vault` | `project.vault` | `SPECCTL_VAULT` |
+| `gate_links` | `gates.links` | `SPECCTL_GATE_LINKS` |
+| `gate_tables` | `gates.tables` | `SPECCTL_GATE_TABLES` |
+| `gate_fidelity` | `gates.fidelity` | `SPECCTL_GATE_FIDELITY` |
+| `large_section_words` | `validate.large_section_words` | `SPECCTL_LARGE_SECTION_WORDS` |
+| `decimal_comma` | `validate.decimal_comma` | `SPECCTL_DECIMAL_COMMA` |
+| `extra_units` | `validate.extra_units` | `SPECCTL_EXTRA_UNITS` |
+| `export_out` | `export.out` | `SPECCTL_EXPORT_OUT` |
+| `export_compare_to` | `export.compare_to` | `SPECCTL_EXPORT_COMPARE_TO` |
+
+A list-valued setting is comma-separated in an environment variable.
+
+**Unknown sections and keys in `specctl.toml` are errors** (exit `4`), never ignored. *A typo
+that is silently ignored is precisely how a runbook and the tool it documents drift apart —
+the failure DEC-13 exists to prevent.*
+
+`./specctl.toml` means the current directory. There is **no** upward search: the effective
+configuration must not depend on where in the tree the operator happened to stand.
+
+`--verbose` MUST print the fully resolved configuration and the source of each value, **to
+stderr** — stdout carries the report, and a caller piping `--format json` must get only JSON.
 
 ### 9.3 Global flags
 
@@ -750,6 +780,10 @@ compare_to = "SYS-baseline-v0"
 | `2` | Errors present, or a coverage gate breached                 |
 | `3` | Unrecoverable input error — the source could not be parsed |
 | `4` | Usage or configuration error                                |
+
+There is no sixth code. A command that is not built yet exits `4`, naming the feature that
+will build it — inventing a code this table does not define would break the pre-commit hook
+of §20, which distinguishes only these five.
 
 ### 9.5 Cross-cutting invariants
 
