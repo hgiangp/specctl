@@ -243,6 +243,38 @@ Bộ ghi escape một dấu `|` nằm trong ô bảng thành `\|`. Nếu hàm đ
 
 ---
 
+## Phần bổ sung — ba lỗi format phát hiện khi implement (D v2.2)
+
+Ba lỗi dưới đây không nằm trong tám điểm ban đầu. Chúng lộ ra khi viết bộ đọc/ghi file section (F03), và lộ ra theo cùng một cách: **một file hợp lệ không sống sót qua vòng ghi rồi đọc lại**.
+
+### Quyết định 9 — Section front-matter ở `level: 1`, không phải `level: 0`
+
+§10.9 cho section chứa nội dung trước heading đầu tiên `level: 0`. Nhưng §6.1 quy định dòng heading có từ một đến sáu dấu `#`. Nên **level 0 không có dòng heading nào biểu diễn được**: section đó dựng được trong bộ nhớ, ghi ra file, rồi không đọc lại được nữa — bộ đọc thấy một dòng không phải anchor cũng không phải heading và báo "nội dung không có anchor".
+
+Đây là section chứa **lịch sử phiên bản**, tức nội dung hợp đồng. Một lỗi làm mất đúng nó là loại lỗi tệ nhất.
+
+Lỗi thứ hai của `level: 0`, ít rõ hơn nhưng ảnh hưởng rộng hơn: nó làm phần front matter trở thành **tổ tiên của mọi chương**. Mọi breadcrumb trong vault sẽ có tiền tố `SYS > Front matter >`. Lịch sử phiên bản không phải cha của chương 3.
+
+**Chốt:** `level: 1`, với một dòng heading thật (`# Front matter`), không có số mục. Nó trở thành **em ruột** của chương 1 — đúng bản chất của nó. Kèm theo: schema A.1 đổi `level` tối thiểu từ 0 thành 1, vì một level không biểu diễn được thì không nên hợp lệ.
+
+Bộ ghi cũng được đặt chốt chặn: gặp khối heading không có dòng ATX thì **từ chối ghi** thay vì ghi ra một file không đọc lại được. Thà lỗi to và sớm hơn là mất nội dung âm thầm.
+
+### Quyết định 10 — Khối heading đúng một dòng
+
+Văn phạm §6.1 viết `heading-block = heading-line , { LF , content-line }`, tức cho phép có dòng nội dung sau dòng heading. Nhưng §6.3 nói heading là "one ATX heading line", và Appendix D cũng vậy. **Chốt:** đúng một dòng, sửa văn phạm theo §6.3.
+
+### Quyết định 11 — Quy tắc style YAML
+
+§10.11 viết "flow style only for `source`", trong khi **cả hai** khối front matter mẫu (§6.2 và Appendix D) dùng flow cho `path`, `path_ids`, `bookmarks` và `refs_out`. Không thể vừa đúng cả hai.
+
+**Chốt:** thay bằng một bảng nêu rõ từng loại giá trị dùng style nào, khớp với hai ví dụ mẫu đến từng ký tự. Và quy tắc quote được nêu chính xác: một scalar chỉ để trần khi nó khớp `^[A-Za-z0-9][A-Za-z0-9 _-]*$` **và** không phải giá trị mà một bộ đọc YAML có thể hiểu thành số, boolean hay null.
+
+Điểm đáng nêu: phép thử thứ hai áp cho **cả YAML 1.1 và 1.2**, không chỉ cho phương ngữ mà thư viện của chính chúng ta hiện thực. `1e5` là **chuỗi** với bộ đọc YAML 1.1 và là **số thực 100000.0** với bộ đọc YAML 1.2. Vault được đọc bởi Obsidian và các editor, không chỉ bởi `specctl`. Quote thêm thì không mất gì; để người xem đọc ra một giá trị khác với cái mà công cụ kiểm tra đọc ra là một sự bất đồng âm thầm về việc spec nói gì.
+
+*Phát hiện này là do test: một test đối chiếu `emit_scalar` với bộ đọc YAML thật đã báo `1e5` để trần, và cái làm lộ vấn đề không phải là bộ đọc của chúng ta mà là câu hỏi "bộ đọc nào".*
+
+---
+
 ## Tổng hợp thay đổi trong D v2.1
 
 | Quyết định | Mục đã sửa trong D |
@@ -255,6 +287,10 @@ Bộ ghi escape một dấu `|` nằm trong ô bảng thành `\|`. Nếu hàm đ
 | 6 · `origin` | §5.5, §6.2, Appendix A.1, Appendix D |
 | 7 · Bóc số | §9.2, §12.6 |
 | 8 · Độ trung thực | §6.6, §8, §10.12 (F7–F9) |
+
+| 9 · Section front-matter level | §10.9, Appendix A.1 |
+| 10 · Heading một dòng | §6.1 |
+| 11 · Style YAML | §10.11 |
 
 Test mới kèm theo: T-ING-03b, T-ING-03c, T-VAL-06b, T-VAL-06c, T-VAL-07b, T-VAL-10, T-VAL-11, T-VAL-12, T-VAL-13.
 

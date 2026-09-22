@@ -1,0 +1,15 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "specctl generated-file front matter (Appendix A.2)",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["generated", "doc", "kind", "generated_at", "generator", "ingest_version"],
+  "properties": {
+    "generated": { "const": true },
+    "doc": { "type": "string", "pattern": "^[A-Z][A-Z0-9]{1,7}$" },
+    "kind": { "enum": ["index", "log", "backlinks", "coverage"] },
+    "generated_at": { "type": "string", "minLength": 1 },
+    "generator": { "type": "string", "minLength": 1 },
+    "ingest_version": { "type": "integer", "minimum": 1 }
+  }
+}

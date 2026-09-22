@@ -201,6 +201,14 @@ Kèm theo — và đây là phần quan trọng hơn cái khung: **hai test hạ
 **Chặn:** thất bại 1, 2, 3.
 **Xong khi:** test đọc-ghi-lại kín trên đầu vào sinh tự động; ba hàm văn bản có test cho ký tự CJK, khoảng trắng đặc biệt, và ký tự độ rộng bằng không.
 
+**Trạng thái: xong.** 283 test xanh. Vòng đọc-ghi kín trên đầu vào sinh tự động, và ví dụ mẫu trong đặc tả round-trip đúng từng byte. Ba lỗi thật mà việc implement làm lộ ra:
+
+- **Bug đã được dự đoán, và nó có thật.** Quyết định 8c của F01 nói hàm đổi khối thành văn bản thuần phải bỏ escape Markdown. Lần viết đầu, biểu thức của tôi có `[]` trong character class nên class bị đóng sớm — `\|` không được bỏ escape. Test bắt được. Nếu không, mọi ô bảng chứa dấu `|` sẽ bị báo là mất nội dung.
+- **Section front-matter `level: 0` không biểu diễn được.** §6.1 cho heading 1–6 dấu `#`, nên section đó ghi ra được mà đọc lại không được — và đó là section chứa lịch sử phiên bản. Đổi thành `level: 1`, và bộ ghi giờ **từ chối** ghi một khối heading không có dòng ATX thay vì ghi ra file không đọc lại được.
+- **Quy tắc quote YAML phải tính đến cả hai phương ngữ.** `1e5` là chuỗi với bộ đọc YAML 1.1 và là số thực với bộ đọc YAML 1.2. Vault được Obsidian đọc, không chỉ `specctl` đọc.
+
+Ba quyết định này ghi ở `G-data-contract.md`, quy tắc đã áp vào D v2.2.
+
 ### F04 · Bộ tài liệu thử
 
 **Làm gì:** một tập file `.docx` nhỏ, mỗi file cô lập một ca khó, commit vào repo làm đầu vào test cho F05.

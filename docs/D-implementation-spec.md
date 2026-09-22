@@ -1,6 +1,6 @@
 # specctl — Implementation Specification
 
-**Version:** 2.1 · **Date:** 2026-09-22 · **Status:** Normative
+**Version:** 2.2 · **Date:** 2026-09-22 · **Status:** Normative
 **Supersedes:** `archive/A-solution-spec-handoff.md` v1.0 — which is retained as history and MUST NOT be implemented from.
 **Audience:** implementer (human or coding agent). §1.5 is for the solution owner.
 **Companions:** `B-limitations-roadmap.md` — what this phase deliberately does not do, and when to extend it. `archive/C-spec-gaps.md` — the 31 findings against v1.0 that this document resolves; read it only to understand *why* a rule is what it is.
@@ -65,7 +65,18 @@ Three inputs are not the implementer's to decide. Each has a due date in the §2
 
 *Note on [OWNER-3]: this may already be covered by the customer agreement. The requirement is that the document say so, because this document is what a coding agent and a reviewer work from.*
 
-### 1.6 What changed in v2.1
+### 1.6 What changed in v2.2
+
+Three contradictions in the file format, found by implementing it. Each was discovered
+because a conforming file failed to survive being written and read back.
+
+| # | Decision | Sections changed |
+| - | -------- | ---------------- |
+| 9 | **The synthetic front-matter section is at `level: 1`**, with a real `#` heading line. `level: 0` cannot be written down — §6.1 gives a heading one to six `#` characters — so that section could be built in memory and never read back. Level 0 also made the preamble the *ancestor* of every chapter, prefixing every breadcrumb in the vault with `Front matter >` | §10.9, App. A.1 |
+| 10 | **A heading block is exactly one line.** §6.1's grammar allowed content lines after the heading line, which §6.3 and Appendix D both contradict | §6.1 |
+| 11 | **§10.11's YAML style rule replaced with a table.** It said "flow style only for `source`", while both worked front-matter blocks use flow sequences for `path`, `path_ids`, `bookmarks` and `refs_out`. The quoting rule is now stated precisely, and applies to YAML 1.1 *and* 1.2 spellings — `1e5` is a string to one and a float to the other, and the vault is read by Obsidian as well as by `specctl` | §10.11 |
+
+### 1.7 What changed in v2.1
 
 v2.1 resolves eight places where v2.0 contradicted itself or specified something unimplementable.
 Nothing was added or removed in scope; every change makes an existing rule usable. The decision
@@ -86,7 +97,7 @@ One consequence of decision 1 required a further change: §12.6 N4 now compares 
 split's parts against the original, as one finding. Comparing each part separately would report every
 value that landed in a sibling as removed — a false alarm on every split.
 
-### 1.7 What changed from v1.0
+### 1.8 What changed from v1.0
 
 v1.0's §5 contradicted itself in five places, omitted two mechanisms the workflow depends on (block lineage, a stable re-ingest key), stated two acceptance thresholds against undefined metrics, and did not address four silent-data-loss paths in .docx parsing. All 31 findings are resolved here as ordinary spec text. Appendix G maps each finding to the section that resolves it, and each v1.0 section to its successor here.
 
@@ -323,7 +334,7 @@ section-file   = front-matter , blank-line , heading-block , { blank-line , bloc
 
 front-matter   = "---" , LF , yaml-mapping , "---" , LF ;
 
-heading-block  = heading-line , { LF , content-line } ;
+heading-block  = heading-line ;                   (* exactly one line, per §6.3 *)
 heading-line   = hashes , SP , [ number , SP ] , title , SP , anchor , LF ;
 hashes         = "#" , { "#" } ;                  (* count = level, 1..6 *)
 
@@ -972,7 +983,14 @@ OMML is converted in-process:
 
 - Headings at levels `1 .. split_level` each start a new section file.
 - Headings deeper than `split_level` stay inside the current file as ordinary `heading` blocks.
-- Content appearing **before the first heading** — cover page, document control, scope statement, revision history — is collected into a synthetic front-matter section that takes the first allocated ID, with `number: ""`, `level: 0`, `title` from the document's title property (falling back to `"Front matter"`), and `generated: false`. It is an ordinary editable section in every other respect.
+- Content appearing **before the first heading** — cover page, document control, scope statement, revision history — is collected into a synthetic front-matter section that takes the first allocated ID, with `number: ""`, **`level: 1`**, `title` from the document's title property (falling back to `"Front matter"`), and `generated: false`. Its heading block is a real ATX line — `# Front matter <!-- id:… type:heading -->` — with no number, since FMT-05 puts the rendered number on the heading line and this section has none. It is an ordinary editable section in every other respect.
+
+*Rationale: `level: 0` cannot be written down. §6.1 gives a heading line one to six `#`
+characters, so a level-0 section has no representable heading line: it could be built in
+memory and never read back from disk. Level 0 also made the preamble the **ancestor** of
+every numbered chapter, prefixing every breadcrumb in the vault with `Front matter >` —
+the revision history is not chapter 3's parent. At level 1 it is a sibling of chapter 1,
+which is what it is.*
 
 *Rationale: an ASPICE SYS spec always carries a revision history before its first numbered heading. It is contractual content, and without this rule it has no file to live in.*
 
@@ -1015,7 +1033,26 @@ for each section S (in document order):
 
 ### 10.11 Serialization
 
-The writer emits, for each section, in this order: front matter (§6.2, keys in the order listed there), a blank line, the heading block, then each remaining block separated by exactly one blank line, each preceded (or, for the heading, followed) by its anchor per FMT-02, with a `^id` marker where FMT-04 requires one. YAML is written with block style for mappings, flow style only for `source`, and double-quoted scalars where a value could otherwise be misread as a number or boolean — `number: "3.2"` in particular.
+The writer emits, for each section, in this order: front matter (§6.2, keys in the order listed there), a blank line, the heading block, then each remaining block separated by exactly one blank line, each preceded (or, for the heading, followed) by its anchor per FMT-02, with a `^id` marker where FMT-04 requires one. YAML is written as follows, which is what the worked front matter of §6.2 and Appendix D
+show character for character:
+
+| Value | Style |
+| ----- | ----- |
+| The front matter as a whole | Block style, one key per line, in §6.2's order |
+| A sequence of scalars —`path`, `path_ids`, `bookmarks`, `refs_out` | **Flow** style: `["3", "3.2"]`. Empty is `[]` |
+| A string **inside** a flow sequence | Always double-quoted. Inside brackets the quotes cost nothing and remove every ambiguity |
+| `source` | Flow mapping:`{ docx: "source/SYS.docx", paragraphs: [412, 447] }`, or `null` when `origin: authored` |
+| A top-level scalar | Plain when it is unmistakably a string; **double-quoted** otherwise — `number: "3.2"` in particular |
+
+A top-level scalar is written plain only when it matches `^[A-Za-z0-9][A-Za-z0-9 _-]*$`
+and is not a value a YAML reader might take for a number, a boolean or null. The second
+test is applied against **both** YAML 1.1 and YAML 1.2 spellings, not just the one the
+writer's own parser implements: `1e5` is the string `"1e5"` to a YAML 1.1 reader and the
+float `100000.0` to a YAML 1.2 one, and the vault is read by Obsidian and by editors as
+well as by `specctl`. Over-quoting is always safe; being read differently by the viewer
+than by the validator is a silent disagreement about what the spec says.
+
+`parent` is **omitted entirely** when absent (§6.2), never written as `null`.
 
 ### 10.12 Fidelity measurement
 
@@ -1750,7 +1787,7 @@ editor created has no paragraph range in the .docx, because it was never in the 
     "doc":       { "type": "string", "pattern": "^[A-Z][A-Z0-9]{1,7}$" },
     "number":    { "type": "string" },
     "title":     { "type": "string", "minLength": 1 },
-    "level":     { "type": "integer", "minimum": 0, "maximum": 6 },
+    "level":     { "type": "integer", "minimum": 1, "maximum": 6 },
     "parent":    { "type": "string", "pattern": "^[A-Z][A-Z0-9]{1,7}-[0-9]{6}$" },
     "order":     { "type": "integer", "minimum": 0 },
     "path":      { "type": "array", "items": { "type": "string" } },

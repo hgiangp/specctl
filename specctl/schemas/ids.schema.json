@@ -1,0 +1,52 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "specctl ID registry, meta/ids.json (Appendix A.3, §7)",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["version", "doc_key", "next", "blocks"],
+  "properties": {
+    "version": { "type": "integer", "minimum": 1 },
+    "doc_key": { "type": "string", "pattern": "^[A-Z][A-Z0-9]{1,7}$" },
+    "next": { "type": "integer", "minimum": 1 },
+    "blocks": {
+      "type": "object",
+      "propertyNames": { "pattern": "^[A-Z][A-Z0-9]{1,7}-[0-9]{6}$" },
+      "additionalProperties": { "$ref": "#/$defs/entry" }
+    }
+  },
+  "$defs": {
+    "id": { "type": "string", "pattern": "^[A-Z][A-Z0-9]{1,7}-[0-9]{6}$" },
+    "entry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "type", "section", "text_hash", "first_seen", "last_seen"],
+      "properties": {
+        "key": { "type": "string" },
+        "status": { "enum": ["active", "deleted", "merged", "split"] },
+        "type": {
+          "enum": ["heading", "paragraph", "list", "table", "figure", "formula", "code", "raw"]
+        },
+        "section": { "$ref": "#/$defs/id" },
+        "text_hash": { "type": "string", "pattern": "^[0-9a-f]{8}$" },
+        "first_seen": { "type": "string", "minLength": 1 },
+        "last_seen": { "type": "string", "minLength": 1 },
+        "merged_into": { "$ref": "#/$defs/id" },
+        "split_into": {
+          "type": "array", "minItems": 2, "items": { "$ref": "#/$defs/id" }
+        }
+      },
+      "allOf": [
+        { "if": { "properties": { "status": { "const": "merged" } },
+                  "required": ["status"] },
+          "then": { "required": ["merged_into"] } },
+        { "if": { "properties": { "status": { "const": "split" } },
+                  "required": ["status"] },
+          "then": { "required": ["split_into"] } },
+        { "if": { "properties": { "status": { "enum": ["active", "deleted"] } },
+                  "required": ["status"] },
+          "then": { "not": { "anyOf": [ { "required": ["merged_into"] },
+                                        { "required": ["split_into"] } ] } } }
+      ]
+    }
+  }
+}
