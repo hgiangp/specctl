@@ -22,7 +22,7 @@ Grep the spec for the marker before changing behaviour it governs.
 |---|---|
 | `docs/F-features.md` | Read first. The problem, the four failure modes, and the feature order F01–F31 with a **status** line each |
 | `docs/D-implementation-spec.md` | The normative rule for every behaviour. Appendix D is a conforming section file to copy literally |
-| `docs/G-data-contract.md` | The eleven data-contract decisions and why each went the way it did |
+| `docs/G-data-contract.md` | The data-contract decisions and why each went the way it did |
 | `docs/H-testing.md` | Running tests, adding `.docx` fixtures, the pandoc cross-check |
 | `docs/B-limitations-roadmap.md` | What is deliberately out of scope |
 | `docs/archive/` | History. Never implement from it |
@@ -52,17 +52,18 @@ python scripts/spike_coverage.py source/SYS.docx                     # what the 
 python scripts/spike_coverage.py source/SYS.docx --pandoc --json spike.json
 ```
 
-Expected baseline: **291 passed, 13 skipped**. With pandoc installed the recorded-baseline
-oracle tests run too: **296 passed, 8 skipped**. The skips are meaningful — 5 for the three
-hand-authored `.docx` fixtures that are not committed yet, the rest for pandoc or for F05.
+Expected baseline with pandoc installed: **351 passed, 14 skipped**; without it, **344 passed,
+20 skipped**. The skips are meaningful — all 14 wait on the three hand-authored `.docx`
+fixtures that are not committed yet (5 fixture checks, 6 walker tests, 3 oracle comparisons).
 A different count, or zero skips, means something is wrong.
 
 There is no linter or formatter configured; `pytest` (`-q --strict-markers`, `testpaths=tests`)
 is the whole gate. `pip install -e` also puts a `specctl` entry point on PATH; `specctl --verbose
 <command>` prints every resolved setting and where it came from.
 
-Only F01–F04 have landed, so **every CLI command deliberately exits 4 (`USAGE`)** naming the
-feature that will build it. That is correct behaviour, not a bug.
+F01–F05 have landed. The OOXML reader works and is tested, but **every CLI command still
+deliberately exits 4 (`USAGE`)** naming the feature that will build it: `ingest` needs F06–F11
+before it can write a vault. That is correct behaviour, not a bug.
 
 ## Architecture
 
@@ -93,6 +94,9 @@ Dependencies point one way. `exits`, `ids`, `clock` are leaves; `model` depends 
 | `sectionfile.py` | Parsing **and** serializing a section file, as a pair | Split the pair across modules |
 | `derived.py` | Everything derived: `parent`, `order`, `path`, `breadcrumb`, `blocks`, `words`, `refs_out` | Be reimplemented inside a command |
 | `config.py` | Resolution: flag → env → `./specctl.toml` → default, each value remembering its source | Search upward for the config file |
+| `ingest/package.py` | Opening a `.docx`: zip members, parts, relationships. Exit `3` on unreadable input | Interpret content |
+| `ingest/report.py` | Issue codes (Appendix B), skip accounting (§8.3), revision counts | Let a component invent a code the report cannot render |
+| `ingest/walk.py` | The block stream: §10.5 W1–W6, in document order | Decide representation — that is F06–F12, reading the stream |
 | `cli.py` | Global flags, config resolution, and turning a `SpecctlError` into an exit code | Hold command logic; nothing else calls `sys.exit` |
 | `schema.py` + `schemas/*.json` | Appendix A JSON Schemas, enforced where files are read | — |
 
@@ -172,11 +176,37 @@ everywhere at once. A typo in `specctl.toml` is an error, not a shrug, and the c
 `./specctl.toml` only — an upward search would make behaviour depend on where the operator
 stood, which is the opposite of declaring it once (DEC-13).
 
-## Next
+## The block stream (F05), and what reads it
 
-F05, the OOXML reader (`docs/F-features.md`, Nhóm B). It is where silent data loss concentrates,
-and where `test_our_reader_finds_everything_pandoc_finds` starts doing work.
+`walk.py` emits a stream of `StreamItem`s — one per `w:p` or `w:tbl`, in document order, each
+with its text already recovered in the accepted-revision state and its embedded objects
+(images, text boxes, equations, OLE) carried alongside. It emits no Markdown. Numbering (F06),
+segmentation (F07), ID allocation (F08), table representation (F09) and the degrade path (F10)
+all read the stream and decide separately. That split is what makes the loss question
+answerable on its own: text that reached the stream cannot be lost later without a named
+reason.
+
+Three things there are easy to get wrong and are each pinned by a test:
+
+* **Field state survives between paragraphs.** A TOC opens in one paragraph and closes dozens
+  later. Judging only the paragraph in hand keeps the whole table of contents as requirements;
+  forgetting to pop the field skips the rest of the document *silently*.
+* **A skipped paragraph still consumes its index.** Indices address the source, so renumbering
+  around a skip makes every issue point one paragraph off.
+* **The paragraph index is built from `id()` of lxml elements, so every indexed element is kept
+  alive.** lxml frees a proxy when the last reference goes and hands the same address to the
+  next one; an `id()` map then starts matching the wrong paragraphs, with no symptom.
 
 **`python-docx` is deliberately not a dependency** (D §1.6, decision 12): its object model hides
 `w:sdt`, `mc:AlternateContent`, `w:ins` and `w:del` — exactly what §10.5 must see. Walk the XML
 with `lxml`.
+
+## Next
+
+F06 (heading and list numbering, §10.3) and F07 (section segmentation, §10.9), both reading the
+block stream.
+
+Worth doing before either: put the three `.docx` fixtures in `tests/fixtures/` (F04, owner
+input). That unskips 14 tests, including
+`test_our_reader_finds_everything_pandoc_finds` — the walker's only independent arbiter. Tests
+built from raw OOXML only prove the reader handles the OOXML we imagined.
