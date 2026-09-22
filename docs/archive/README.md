@@ -2,7 +2,7 @@
 
 Các tài liệu ở đây **không dùng để implement**. Giữ lại để tra nguồn gốc của một quyết định khi cần.
 
-Tài liệu đang có hiệu lực: `../F-features.md` (đọc trước), `../D-implementation-spec.md` (chi tiết kỹ thuật), `../B-limitations-roadmap.md` (phạm vi và lộ trình).
+Tài liệu đang có hiệu lực: `../F-features.md` (đọc trước), `../D-implementation-spec.md` (chi tiết kỹ thuật), `../G-data-contract.md` (quyết định của F01), `../B-limitations-roadmap.md` (phạm vi và lộ trình).
 
 | File | Là gì | Vì sao lưu trữ |
 |---|---|---|

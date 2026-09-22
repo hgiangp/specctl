@@ -1,6 +1,6 @@
 # specctl — Implementation Specification
 
-**Version:** 2.0 · **Date:** 2026-09-21 · **Status:** Normative
+**Version:** 2.1 · **Date:** 2026-09-22 · **Status:** Normative
 **Supersedes:** `archive/A-solution-spec-handoff.md` v1.0 — which is retained as history and MUST NOT be implemented from.
 **Audience:** implementer (human or coding agent). §1.5 is for the solution owner.
 **Companions:** `B-limitations-roadmap.md` — what this phase deliberately does not do, and when to extend it. `archive/C-spec-gaps.md` — the 31 findings against v1.0 that this document resolves; read it only to understand *why* a rule is what it is.
@@ -65,7 +65,28 @@ Three inputs are not the implementer's to decide. Each has a due date in the §2
 
 *Note on [OWNER-3]: this may already be covered by the customer agreement. The requirement is that the document say so, because this document is what a coding agent and a reviewer work from.*
 
-### 1.6 What changed from v1.0
+### 1.6 What changed in v2.1
+
+v2.1 resolves eight places where v2.0 contradicted itself or specified something unimplementable.
+Nothing was added or removed in scope; every change makes an existing rule usable. The decision
+record with the full before/after and the reasoning is `G-data-contract.md`.
+
+| # | Decision | Sections changed |
+| - | -------- | ---------------- |
+| 1 | **Every part of a split gets a new ID**, and the original ID leaves the vault. v2.0 let one part keep the original ID while the registry marked that ID terminal | §5.4 L3, §7, §14, §15, App. D |
+| 2 | **V04b applies only to `supersedes`.** v2.0 also applied it to `split_from`, so every split of N parts failed | §5.4 L2, §12.3, §12.5 |
+| 3 | **`validate` writes nothing.** ID allocation and registry updates moved to `specctl assign-ids` and `specctl registry sync` | §9.1, §9.5, §12.1, §12.4, §12.5, §12.10 |
+| 4 | **Edit workflow reordered:** `index` before the commit, `registry sync` and `log` in a second commit, squash merge forbidden | §16 E5–E6, §20 |
+| 5 | **V05 compares content lines byte-for-byte and anchor attributes as an unordered set** — not the whole block byte-for-byte, which FMT-12 makes impossible | FMT-08, §6.3, §12.3, §12.8 |
+| 6 | **`origin: ingest\|authored`** added to section front matter; `source` is `null` and `bookmarks` is `[]` for an authored section | §5.5, §6.2, App. A.1 |
+| 7 | **Numeric tokens have boundaries:** no token inside an identifier, radix prefixes excluded, decimal-comma rule made explicit and configurable | §12.6 |
+| 8 | **Fidelity:** `candidate_sections` defined, short segments matched only in their owning section at token boundaries, `to_plain_text` unescapes Markdown | §6.6, §8, §10.12 F7–F9 |
+
+One consequence of decision 1 required a further change: §12.6 N4 now compares the **union** of a
+split's parts against the original, as one finding. Comparing each part separately would report every
+value that landed in a sibling as removed — a false alarm on every split.
+
+### 1.7 What changed from v1.0
 
 v1.0's §5 contradicted itself in five places, omitted two mechanisms the workflow depends on (block lineage, a stable re-ingest key), stated two acceptance thresholds against undefined metrics, and did not address four silent-data-loss paths in .docx parsing. All 31 findings are resolved here as ordinary spec text. Appendix G maps each finding to the section that resolves it, and each v1.0 section to its successor here.
 
@@ -270,7 +291,7 @@ Permitted transitions:
 **Lineage is declared in the file, not inferred.** When an editor merges or splits blocks, the surviving blocks state where their content came from, using the anchor attributes of §6.3:
 
 - `supersedes:<ID>[,<ID>…]` — this block absorbed the content of those blocks. Each named block becomes `merged`.
-- `split_from:<ID>` — this block was carved out of that block. The named block becomes `split`.
+- `split_from:<ID>` — this block was carved out of that block. The named block becomes `split` and leaves the vault.
 
 *Rationale (DEC-10): the validator must be able to tell "this ID vanished because content was deleted" from "this ID vanished because its content is now in that block". Without the distinction, the only way to merge two paragraphs is to disable deletion protection for the whole run, and the Excel deliverable reports an editorial improvement as content deletion.*
 
@@ -279,15 +300,15 @@ Rules:
 | R  | Rule                                                                                                                                                                                                                                                |
 | -- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | L1 | A lineage attribute MUST name an ID that exists in the comparison base (§12.2). Naming an unknown ID is V04a.                                                                                                                                      |
-| L2 | An ID MAY be claimed by at most one surviving block. Two blocks claiming the same`supersedes` target is V04b.                                                                                                                                     |
-| L3 | `split_from` MUST be carried by **every** block resulting from the split, including the one that keeps the original ID if any. A block MAY keep the original ID and omit `split_from`; the siblings then carry `split_from:<original>`. |
+| L2 | An ID MAY be named by at most one `supersedes` attribute in the whole vault. Two blocks naming the same `supersedes` target is V04b. A `split_from` target is **expected** to be named by every part of its split, so V04b never applies to `split_from`. |
+| L3 | **Every** block resulting from a split MUST carry `split_from:<original-id>` and MUST be allocated a **new** ID. The original ID MUST NOT appear in the vault after the split; it becomes `split` with `split_into` listing every part. A split into N parts therefore consumes N new IDs and retires one. *Rationale: a terminal status means "not in the vault". Letting one part keep the original ID makes that ID simultaneously `active` and `split`, which no consumer can interpret — and it makes the Excel export report one part as `unchanged` when its text demonstrably got shorter.* |
 | L4 | Lineage attributes are**permanent**. `specctl fmt` MUST NOT remove them, and they survive into future versions as the block's provenance.                                                                                                   |
 | L5 | Lineage is file-agnostic: the named ID MAY live in another section file. The workflow restricts multi-file edits (§16), the data model does not.                                                                                                   |
 
 ### 5.5 New blocks and new sections
 
-- A new block written by an editor has no anchor. `specctl validate --assign-ids` allocates an ID and writes the anchor (§12.5).
-- A new **section** — a new heading at a level ≤ `split_level` — requires its file to be named after an ID that does not yet exist. `specctl validate --assign-ids` MUST: allocate the heading ID, create `vault/sections/<new-id>.md` containing the new heading and its content, remove that content from the file it was authored in, and leave the neighbouring sections' derived front matter to `specctl fmt`.
+- A new block written by an editor has no anchor. `specctl assign-ids` allocates an ID and writes the anchor (§12.4).
+- A new **section** — a new heading at a level ≤ `split_level` — requires its file to be named after an ID that does not yet exist. `specctl split-section` (§12.9) performs the move. A section created this way carries `origin: authored`, `source: null` and `bookmarks: []` (§6.2): it has no paragraph range in the .docx because it was never in the .docx.
 
 ---
 
@@ -326,7 +347,7 @@ blank-line     = LF ;
 | FMT-05 | The heading line carries the rendered number from Word (`## 3.2 Braking control`). Body text MUST NOT contain section numbering.                                                                                                                                                                                                                                                                                                             |
 | FMT-06 | Exactly one blank line separates consecutive blocks. The file ends with exactly one`LF`.                                                                                                                                                                                                                                                                                                                                                     |
 | FMT-07 | Internal cross-references are wikilinks (§6.5). External links use standard Markdown link syntax with the original URL.                                                                                                                                                                                                                                                                                                                       |
-| FMT-08 | Blocks with`locked:true` MUST NOT be modified by any agent, and MUST be byte-identical to the base on validation (V05).                                                                                                                                                                                                                                                                                                                      |
+| FMT-08 | Blocks with`locked:true` MUST NOT be modified by any agent. V05 compares them to the base per §12.8 — content lines byte-for-byte, anchor attributes as an unordered set.                                                                                                                                                                                                                                                                                                                      |
 | FMT-09 | Files are UTF-8 without BOM, LF line endings, no trailing whitespace on any line, no tab characters outside fenced code blocks.                                                                                                                                                                                                                                                                                                                |
 | FMT-10 | Generated files (§13) carry`generated: true` and MUST NOT be hand-edited.                                                                                                                                                                                                                                                                                                                                                                   |
 | FMT-11 | Derived front matter (§6.2) is owned by`specctl fmt`. Humans and agents edit the body; `fmt` recomputes the front matter.                                                                                                                                                                                                                                                                                                                 |
@@ -352,6 +373,7 @@ bookmarks: ["_Ref123456", "_Toc99887"]
 refs_out: ["SYS-000245", "SYS-000301#^sys-000302"]
 blocks: 9
 words: 412
+origin: ingest
 source: { docx: "source/SYS.docx", paragraphs: [412, 447] }
 ingest_version: 1
 generated: false
@@ -364,8 +386,9 @@ generated: false
 | ------------------ | ----------------- | ----------------------- | ---------------------------------------------------- |
 | `id`             | ingest, immutable | yes                     | allocation (§5.2)                                   |
 | `doc`            | ingest, immutable | yes                     | `--doc-key`                                        |
-| `source`         | ingest, immutable | yes                     | the package and paragraph indices                    |
-| `bookmarks`      | ingest, immutable | yes (may be`[]`)      | `w:bookmarkStart` names in the section             |
+| `origin`         | ingest, immutable | yes                     | `ingest` for a section extracted from the .docx; `authored` for one created later by an editor |
+| `source`         | ingest, immutable | yes                     | the package and paragraph indices when`origin: ingest`; MUST be `null` when `origin: authored` |
+| `bookmarks`      | ingest, immutable | yes (may be`[]`)      | `w:bookmarkStart` names in the section; MUST be `[]` when `origin: authored` |
 | `ingest_version` | ingest            | yes                     | §6.7                                                |
 | `generated`      | constant`false` | yes                     | —                                                   |
 | `number`         | **fmt**     | yes (may be`""`)      | the heading line                                     |
@@ -412,7 +435,7 @@ Attributes available on **every** type:
 
 | Attribute      | Values               | Meaning                                                                         |
 | -------------- | -------------------- | ------------------------------------------------------------------------------- |
-| `locked`     | `true` / `false` | Overrides the default. A locked block MUST be byte-identical to the base (V05). |
+| `locked`     | `true` / `false` | Overrides the default. A locked block's content MUST match the base per §12.8 (V05). |
 | `supersedes` | comma-separated IDs  | Lineage: this block absorbed those blocks (§5.4).                              |
 | `split_from` | one ID               | Lineage: this block was carved out of that block (§5.4).                       |
 
@@ -482,7 +505,13 @@ These three functions have exactly one definition each. Four consumers use them:
 
 > `normalize_ws` MUST be used wherever case carries meaning. Unit symbols do: `mV` and `MV` differ by nine orders of magnitude. The numeric diff (§12.6) therefore uses `normalize_ws`, never `normalize`.
 
-**`to_plain_text(block)`** — one string per block, used for comparison and for export:
+**`to_plain_text(block)`** — one string per block, used for comparison and for export.
+
+It MUST **unescape Markdown** as its final step: a backslash immediately preceding one of
+`| * _ [ ] < > ` \` is removed, and `\\` becomes a single backslash. *The writer escapes a literal
+`|` inside a pipe-table cell as `\|`. Without unescaping, the source segment `A|B` never matches the
+emitted `A\|B`, and a paragraph that was captured perfectly is reported as lost.*
+
 
 | Type                  | Result                                                                                               |
 | --------------------- | ---------------------------------------------------------------------------------------------------- |
@@ -540,6 +569,7 @@ CJK characters are those in `U+3040`–`U+30FF`, `U+3400`–`U+4DBF`, `U+4E00`�
       "last_seen": "v1"
     },
     "SYS-000130": {
+      "key": "SYS-000100/SYS-000120|paragraph|5|77c0aa31",
       "status": "split",
       "split_into": ["SYS-001205", "SYS-001206"],
       "type": "paragraph",
@@ -616,6 +646,9 @@ key = <ancestor section IDs, root first, "/"-separated> | <type> | <ordinal with
     "source_segments": 3184,
     "segments_covered": 3179,
     "coverage": 0.9984,
+    "segments_short": 96,
+    "segments_short_covered": 94,
+    "coverage_long": 0.9990,
     "added_chars": 4127,
     "added_breakdown": { "heading_numbers": 1204, "list_numbers": 2611, "captions": 312 },
     "uncovered": [
@@ -661,7 +694,10 @@ Each entry is `{severity, code, paragraph, detail}` where `severity` is `error`,
 ```
 specctl ingest SOURCE.docx --doc-key KEY --out DIR [options]   # §10
 specctl fmt [PATHS...] [--check]                               # §11
-specctl validate [PATHS...] [options]                          # §12
+specctl validate [PATHS...] [options]                          # §12   READ-ONLY
+specctl assign-ids [PATHS...] [options]                        # §12.4
+specctl split-section FILE --at HEADING-ID                     # §12.9
+specctl registry sync [--base REF] [--label LABEL]             # §12.10
 specctl index                                                  # §13.1
 specctl log "message" [options]                                # §13.4
 specctl export xlsx --out PATH [options]                       # §13.5
@@ -686,6 +722,8 @@ fidelity = 0.99    # ratio
 
 [validate]
 large_section_words = 1500
+decimal_comma       = false   # true when the source writes decimals as "1,5" (§12.6)
+extra_units         = []      # project-specific unit symbols (Appendix C)
 
 [export]
 out        = "exports/SYS.xlsx"
@@ -724,6 +762,7 @@ These apply to every command and are individually tested (§18).
 | **Atomic writes**       | `ingest` MUST build the vault in a temporary directory and move it into place on success. A crashed or gate-failed run MUST NOT leave a partially written vault. Other commands write each file atomically (write to a sibling temp file, then rename). |
 | **Idempotency**         | `fmt`, `index` and `export` MUST be idempotent: running twice changes nothing the second time. `ingest --reingest` is idempotent per §18 T-ING-05.                                                                                               |
 | **Source is read-only** | No command may write to`source/`.                                                                                                                                                                                                                       |
+| **Read-only commands**  | `validate`, and any command invoked with `--check`, MUST NOT write to any path — not the vault, not `meta/`, not a temp file inside the repository. They are called repeatedly and from the pre-commit hook. The commands that write are `ingest`, `fmt`, `assign-ids`, `split-section`, `registry sync`, `index`, `log` and `export`. |
 | **Performance budget**  | On the real document (~1200 blocks, ~90 sections):`ingest` < 60 s, `fmt` < 5 s, `validate` < 5 s, `index` < 5 s, `export` < 20 s. Exceeding a budget is a defect, not a tuning opportunity.                                                     |
 
 ---
@@ -964,10 +1003,13 @@ for section in vault:
 # 3. Directional coverage
 covered := 0
 for seg in source_segments:
-    if any(seg in haystack[sid] for sid in candidate_sections(seg)):   # owning section first
-        covered += 1
+    if len(seg) >= 12:
+        hit := any(seg in haystack[sid] for sid in candidate_sections(seg))
     else:
-        uncovered.append({paragraph, chars: len(seg), reason})
+        # short segments: owning section only, and only at a token boundary
+        hit := token_bounded_find(seg, haystack[owning_section(seg)])
+    if hit: covered += 1
+    else:   uncovered.append({paragraph, chars: len(seg), reason})
 
 coverage := covered / len(source_segments)
 
@@ -984,6 +1026,9 @@ added_chars := sum of characters the writer introduced:
 | F4 | Text emitted twice — a text box appears both in its rendered block and in its`raw` block — counts once on the source side and contributes nothing extra to coverage.                                                                             |
 | F5 | Every uncovered segment MUST be listed in`text_fidelity.uncovered` with its paragraph index, character count and reason. A failing number must be actionable, not merely low.                                                                      |
 | F6 | `coverage` is the ACC-2 metric and the `--fail-under-fidelity` gate.                                                                                                                                                                             |
+| F7 | **`candidate_sections(seg)`** is: the section owning the source paragraph `seg` came from, then that section's parent, then its children, then every remaining section in document order. The segmenter (§10.9) already assigned every source paragraph to a section, so `owning_section` is a lookup, not a search. The order exists to make the first hit deterministic and the scan cheap; for a long segment every section is eligible. |
+| F8 | A segment whose `normalize`d form is **shorter than 12 characters** is matched **only inside its owning section**, and only where the match is delimited by a non-alphanumeric character or a string boundary on both sides. *Under plain substring containment vault-wide, `"Yes"`, `"N/A"`, `"1"` and `"OK"` match somewhere by accident, and coverage rises with the size of the vault rather than with what was captured.* The threshold is 12 characters and is **fixed**, not configurable — like the CJK divisor of §6.6, it exists so the ACC-2 number means the same thing in every run. |
+| F9 | `text_fidelity` MUST report `segments_short`, `segments_short_covered` and `coverage_long` alongside `coverage`. The gate stays on `coverage` over all segments; the breakdown is what makes a passing number auditable. |
 
 ---
 
@@ -1028,12 +1073,17 @@ The tree is built by reading each section's heading level and sorting sections b
 specctl validate [PATHS...] [options]
 
   --base REF          git ref to compare against (see §12.2)
-  --assign-ids        allocate IDs for anchorless blocks and create files for new sections
   --allow-delete      permit blocks to disappear without lineage
   --format text|json
 ```
 
 Exit `0` clean, `1` warnings only, `2` any error.
+
+> **`validate` writes nothing.** Not a section file, not `meta/ids.json`, not a temp file inside the
+> vault. It is called repeatedly, and from the pre-commit hook, so a side effect would mean two runs
+> on the same tree disagree. The two operations that *do* write — allocating IDs for new blocks, and
+> recording terminal statuses in the registry — are separate commands (§12.4, §12.10).
+> *This is the one rule in §12 that no flag may override.*
 
 ### 12.2 Base resolution
 
@@ -1050,14 +1100,14 @@ Exit `0` clean, `1` warnings only, `2` any error.
 | V03  | error                                         | —               | No duplicate block ID anywhere in the vault                                                                                                                        |
 | V04  | error                                         | —               | No ID present in`--base` has vanished without lineage (§12.5)                                                                                                   |
 | V04a | error                                         | —               | A lineage attribute names an ID that does not exist in`--base`                                                                                                   |
-| V04b | error                                         | —               | Two surviving blocks claim the same`supersedes` target                                                                                                           |
-| V05  | error                                         | —               | `locked:true` blocks are byte-identical to `--base`                                                                                                            |
+| V04b | error                                         | —               | Two blocks name the same`supersedes` target. Never applicable to `split_from` (§5.4 L2)                                                                        |
+| V05  | error                                         | —               | `locked:true` blocks match `--base` per §12.8                                                                                                                  |
 | V06  | error                                         | —               | Pipe tables have a consistent column count; HTML tables parse and are well-formed                                                                                  |
 | V07  | error                                         | —               | Wikilink targets exist: the section file for`[[ID]]`, and additionally the `^id` marker for `[[ID#^blockid]]`                                                |
 | V08  | error                                         | —               | Every asset referenced by a`figure`, `formula` or `raw` block exists on disk                                                                                 |
 | V09  | warn                                          | `fmt`          | Front-matter`blocks` count disagrees with the anchor count                                                                                                       |
 | V10  | **warn — always reported prominently** | —               | A numeric value or unit changed inside a block (§12.6)                                                                                                            |
-| V11  | warn                                          | `--assign-ids` | A block has no anchor                                                                                                                                              |
+| V11  | warn                                          | `assign-ids` | A block has no anchor                                                                                                                                                |
 | V12  | warn                                          | —               | Heading`level` or `number` changed relative to `--base`                                                                                                      |
 | V13  | error / warn                                  | `fmt`          | **error** when a block that is a wikilink target lacks its required `^id` marker; **warn** when a marker is present but inconsistent with its anchor |
 | V14  | info                                          | —               | Section exceeds`validate.large_section_words` (default 1500) — a candidate for splitting when next edited                                                       |
@@ -1065,30 +1115,50 @@ Exit `0` clean, `1` warnings only, `2` any error.
 | V16  | warn                                          | `fmt`          | FMT-09 / FMT-06 formatting violation                                                                                                                               |
 | V17  | error                                         | —               | A file's`ingest_version` is lower than the running tool's (§6.7)                                                                                                |
 
-### 12.4 `--assign-ids`
+### 12.4 `specctl assign-ids`
 
-MUST allocate IDs only to anchorless blocks, and MUST leave every other byte of every file unchanged. When an anchorless block is a heading at a level ≤ `split_level`, it also performs the new-section procedure of §5.5. Every allocation increments `meta/ids.json.next` and writes an entry with `first_seen` set to the current baseline label.
+```
+specctl assign-ids [PATHS...] [--label LABEL] [--format text|json]
+```
+
+Allocates an ID to every **anchorless** block and writes its anchor. It MUST leave every other byte
+of every file unchanged, and it MUST NOT create, move, rename or delete any file. Every allocation
+increments `meta/ids.json.next` and writes a registry entry with `status: active` and `first_seen`
+set to `--label` (default: the most recent baseline tag reachable from `HEAD`).
+
+An anchorless **heading** at a level ≤ `split_level` gets its ID like any other block, plus an
+`info` finding naming `specctl split-section` as the next step. `assign-ids` does **not** move the
+content into a new file.
+
+*Rationale: "leave every other byte unchanged" and "move this content into a different file" cannot
+both be guarantees of one command. Separating them is what makes the byte-stability guarantee
+testable (T-VAL-07), and file creation reviewable on its own.*
 
 ### 12.5 V04 — lineage-aware deletion check
 
 ```
 base_ids    := active IDs in --base
 working_ids := IDs present in the working tree
-claimed     := { every ID named in a supersedes: or split_from: attribute in the working tree }
+superseded  := multiset of IDs named in a supersedes: attribute in the working tree
+split_srcs  := set of IDs named in a split_from: attribute in the working tree
+claimed     := superseded ∪ split_srcs        # accounted for by lineage, either way
 
 for id in base_ids - working_ids:
     if id in claimed:
         continue                                  # lineage accounts for it
     if --allow-delete:
-        record info "block deleted (accepted)"; registry[id].status := "deleted"
+        record info "block deleted (accepted)"        # registry updated later, by §12.10
     else:
         record V04 error "block deleted (declare lineage, or use --allow-delete)"
 
-for id in claimed - base_ids:   record V04a error
-for id claimed more than once:  record V04b error
+for id in claimed - base_ids:                     record V04a error
+for id in superseded with multiplicity > 1:       record V04b error
+# split_srcs is deliberately exempt: a split into N parts names its source N times (§5.4 L2)
 ```
 
-On a clean run the registry is updated: a `supersedes` target becomes `merged` with `merged_into`, a `split_from` target becomes `split` with `split_into` listing every claimant.
+V04 only **reports**. Turning these findings into registry state — `merged` with `merged_into`,
+`split` with `split_into` listing every part, `deleted` for an accepted deletion — is the job of
+`specctl registry sync` (§12.10), which runs after the commit.
 
 *Rationale (DEC-10): without this clause the only way to merge two paragraphs is `--allow-delete`, which switches off deletion protection for the entire run — including the accidental deletions V04 exists to catch.*
 
@@ -1104,7 +1174,40 @@ token   = number , [ [ SP ] , unit ] ;
 range   = token , ( "–" | "—" | "-" ) , token ;        (* yields two tokens, both flagged range *)
 ```
 
-`unit` is a symbol from the vocabulary in Appendix C, matched **case-sensitively** against `normalize_ws` text (§6.6). A trailing word not in the vocabulary is not a unit; the number is still extracted, with `unit: null`.
+`unit` is a symbol from the vocabulary in Appendix C, matched **case-sensitively** against `normalize_ws` text (§6.6).
+
+**Boundaries.** The grammar alone matches the `2` in `Sig2`. Two boundary rules are therefore
+normative, and are applied before anything else:
+
+| Rule | Effect |
+|---|---|
+| A `number` MUST be preceded by start-of-string, whitespace, or one of `( [ { < " ' = : ; / – — -`. A digit directly preceded by a letter, digit, `_`, `#`, `$` or `%` never starts a token | `Sig2`, `CAN_2`, `A1`, `P0` yield nothing |
+| A `number` MUST be followed by end-of-string, whitespace, a unit, or one of `) ] } > " ' . , ; : ? ! / – — -`. A trailing `.` or `,` counts only when itself followed by whitespace or end-of-string — otherwise it belongs to the number | `50 ms.` at a sentence end yields `50 ms`, not `50.` |
+
+**Unit adjacency.** When a number is followed with **no space** by one or more letters:
+
+- letters in the vocabulary → that unit. `50ms` is `(50, "ms")`, identical to `50 ms`.
+- letters not in the vocabulary → **the whole token is excluded.** `1F`, `2x`, `3rd`, `4th` yield nothing.
+
+With a space, a trailing word not in the vocabulary is not a unit, and the number is still extracted
+with `unit: null` — `50 widgets` is `(50, null)`.
+
+**Radix prefixes.** A token matching `0[xXbBoO][0-9A-Fa-f_]+` is excluded entirely. `0x1F` is an
+address or a mask, never a measurement, and reading it as the number `0` would report a change
+every time a hex literal was reformatted.
+
+**Decimal separator.** `1,5` and `1,234` cannot both be read the same way, so the rule is explicit:
+
+| Input | Reading | Why |
+|---|---|---|
+| `1,234`, `12,345,678` | thousands separator → `1234`, `12345678` | Matches `\d{1,3}(,\d{3})+` exactly |
+| `1,5`, `1,23`, `1,2345` | decimal separator → `1.5`, `1.23`, `1.2345` | The comma is not followed by exactly three digits |
+| `1,234.5` | comma thousands, dot decimal → `1234.5` | Both present: the **last** separator is the decimal one |
+| `1.234,5` | dot thousands, comma decimal → `1234.5` | Same rule |
+
+If the source document writes decimals with commas throughout, set `[validate] decimal_comma = true`
+in `specctl.toml`; the comma then always reads as the decimal separator and the dot as thousands.
+Declared once, per DEC-13 — never guessed per token.
 
 **Exclusions.** These are never numeric tokens:
 
@@ -1132,7 +1235,7 @@ else:                                       report `V10  <id>  numbers removed: 
 | N1 | The comparison is a multiset difference, never a positional alignment. It is therefore invariant under reordering and rewriting — which matters, because a restructure is exactly when a value could be slipped through. |
 | N2 | The`old -> new` arrow form is emitted **only** on an unambiguous one-for-one substitution. In every other case both lists are printed.                                                                            |
 | N3 | Unit comparison is case-sensitive (`mV` ≠ `MV`), so V10 uses `normalize_ws`, never `normalize`.                                                                                                                  |
-| N4 | A block that is new, or whose lineage names a base block, is compared against the union of the text of its lineage ancestors.                                                                                             |
+| N4 | Lineage **groups** blocks before comparing; a part of a split is never compared on its own. A merge compares the survivor against the union of its `supersedes` targets' base text. A split compares the union of **every** block naming `split_from:X` against `X`'s base text, as **one** finding reported against `X`. A new block with no lineage has an empty base multiset. *Since §5.4 L3 gives every part of a split a new ID, comparing each part separately would report every value that landed in a sibling as removed — a false alarm on every split, which is the operation Problem B performs most.* |
 | N5 | The same routine produces the`Numeric change` column of the Excel export (§13.5). One implementation, two consumers.                                                                                                   |
 
 ### 12.7 Output
@@ -1151,6 +1254,67 @@ Affected by inbound references: SYS-000245, SYS-000301 (see backlinks.md)
 JSON output is an object `{base, base_sha, files_checked, findings: [...], summary: {...}}` where each finding is `{file, rule, severity, block_id, message, old, new}`. `old` and `new` are `null` unless the rule produced a pair.
 
 The "Affected by inbound references" line lists every block outside the changed files that links **into** a changed block, read from `backlinks.md`. It is informational and does not affect the exit code.
+
+### 12.8 V05 — how a locked block is compared
+
+"Byte-identical" cannot be taken literally, because FMT-12 lets `specctl fmt` normalize anchor
+attribute order, and `fmt` runs before `validate` in every workflow. A literal byte comparison would
+therefore fail on a locked block that nobody touched.
+
+V05 compares two things, and nothing else:
+
+| Part | Comparison |
+|---|---|
+| The block's **content lines** — every line after the anchor, up to but excluding the `^id` marker | Byte-for-byte |
+| The anchor's **attributes** | As an unordered mapping of key to value. Order is irrelevant; a changed, added or removed key or value is a V05 error |
+
+The anchor **line** is never byte-compared, and the `^id` marker is excluded entirely — it is derived
+and `fmt` owns it (FMT-04).
+
+*Rationale: V05 exists to catch a changed figure caption or a rewritten fallback. It does not exist
+to catch attribute reordering, which is exactly what the formatter is supposed to do.*
+
+### 12.9 `specctl split-section`
+
+```
+specctl split-section FILE --at HEADING-ID [--format text|json]
+```
+
+The file-creating half of §5.5. `HEADING-ID` names a heading block inside `FILE` at a level
+≤ `split_level`, which already has an ID (allocated by `assign-ids`). The command:
+
+1. creates `vault/sections/<HEADING-ID>.md`;
+2. moves the heading block and every block up to the next heading at a level ≤ its own into it;
+3. writes that file's authored front matter — `id`, `doc`, `origin: authored`, `source: null`,
+   `bookmarks: []`, `ingest_version`, `generated: false`;
+4. removes the moved content from `FILE`;
+5. leaves **every derived key, in both files and in every other section, to `specctl fmt`**.
+
+It writes no derived front matter of its own. Run `specctl fmt` immediately after.
+
+### 12.10 `specctl registry sync`
+
+```
+specctl registry sync [--base REF] [--label LABEL] [--format text|json]
+```
+
+The only command that writes terminal statuses into `meta/ids.json`. It runs **after** the commit,
+because `last_seen` and the Excel rationale join both need a commit that exists.
+
+Reading the working tree and `--base` (resolved as in §12.2), it writes:
+
+| Registry change | Trigger |
+|---|---|
+| `merged`, with `merged_into` | The ID is named by exactly one `supersedes:` attribute |
+| `split`, with `split_into` listing **every** part | The ID is named by one or more `split_from:` attributes |
+| `deleted` | The ID is in `--base`, absent from the working tree, and named by no lineage attribute |
+| `last_seen := LABEL` | Every ID still `active` |
+
+It MUST refuse to run — exit `2`, writing nothing — if `specctl validate` would report any error on
+the same tree. *A registry built from a tree with a duplicate ID or a dangling lineage target records
+the wrong history permanently, and I2 says entries are never removed.*
+
+`--label` defaults to the most recent baseline tag reachable from `HEAD`.
 
 ---
 
@@ -1255,7 +1419,7 @@ The repository's `CLAUDE.md` MUST state at least the following. It is a delivera
 4. **Never modify** blocks marked `locked:true`; never remove or alter an anchor; never renumber an ID.
 5. **Never hand-edit derived front matter** (§6.2). Edit the heading line and run `specctl fmt`.
 6. **Never change a numeric value or a unit** unless the user asked explicitly. If a change appears necessary, propose it in chat instead.
-7. **Declare lineage.** When merging blocks, put `supersedes:` on the survivor. When splitting, put `split_from:` on the new blocks. Never let a block simply disappear.
+7. **Declare lineage.** When merging blocks, put `supersedes:` on the survivor. When splitting, delete the original anchor and put `split_from:<original-id>` on **every** new part — no part keeps the original ID. Never let a block simply disappear.
 8. To edit: create a branch `edit/<section-id>-<slug>`, edit only the target section file, run `specctl fmt` then `specctl validate`, report the summary **verbatim**, and wait for human approval before committing.
 9. Commit message format per §17.
 10. Use `rg` with ID patterns to find references; `backlinks.md` is authoritative.
@@ -1282,7 +1446,8 @@ Every `SKILL.md` MUST contain: when to use, preconditions, a step-by-step proced
 ## Lineage (required when restructuring)
 - Merging blocks: keep one anchor, add `supersedes:<other-id>[,<id>...]` to it, delete the other anchors.
 - Splitting a block: keep the original anchor on the first part; every other part gets a new
-  anchor with `split_from:<original-id>` and no id (validate --assign-ids fills it in).
+  anchor carrying `split_from:<original-id>` and no id (`specctl assign-ids` fills the id in).
+  The original anchor is deleted — no part keeps the original ID.
 - Never delete a block outright. If content must go, propose it and wait for approval.
 ```
 
@@ -1304,24 +1469,34 @@ metadata:
 ## 16. Edit workflow (normative)
 
 ```
-1. git checkout -b edit/SYS-000120-restructure
-2. agent edits vault/sections/SYS-000120.md only, declaring lineage for any split or merge
-3. specctl fmt
-4. specctl validate --format json
-5. agent reports: rules triggered, numeric changes, lineage declared, inbound references affected
-6. human reviews the diff in VS Code; edits by hand if needed
-7. specctl fmt && specctl validate          (must be clean, or every finding explicitly accepted)
-8. git commit                               (§17)
-9. specctl index && specctl log "<rationale>" --section SYS-000120 --skill restructure-section
-10. git checkout main && git merge edit/SYS-000120-restructure
+ 1. git checkout -b edit/SYS-000120-restructure
+ 2. agent edits vault/sections/SYS-000120.md only, declaring lineage for any split or merge
+ 3. specctl assign-ids                       (only if the agent wrote new blocks)
+ 4. specctl fmt
+ 5. specctl validate --format json           (read-only)
+ 6. agent reports: rules triggered, numeric changes, lineage declared, inbound references affected
+ 7. human reviews the diff in VS Code; edits by hand if needed
+ 8. specctl fmt && specctl validate          (must be clean, or every finding explicitly accepted)
+ 9. specctl index                            (BEFORE the commit — see E5)
+10. git commit                               (§17) — content + regenerated index, one commit
+11. specctl registry sync                    (§12.10 — needs the commit)
+12. specctl log "<rationale>" --section SYS-000120 --skill restructure-section
+13. git commit -m "[SYS] registry + log for <short-sha of 10>"
+14. git checkout main && git merge --no-ff edit/SYS-000120-restructure
 ```
+
+*Steps 11–13 are a second commit on purpose. `registry sync` and `log` both need a commit that
+already exists — `log` records its short SHA, and that SHA is what joins a rationale to an Excel row
+(§13.6). They cannot run before step 10, and their output cannot go into step 10's commit.*
 
 | R  | Rule                                                                                                                                                                                                                                                   |
 | -- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | E1 | One edit session touches**one** section file. Touching more requires explicit user approval, stated in the commit message. *The data model permits cross-section lineage (§5.4 L5); this restriction is about reviewability, not capability.* |
 | E2 | `fmt` runs **before** `validate`, so derived drift never presents as a content finding.                                                                                                                                                      |
 | E3 | The agent reports the validator summary verbatim. It MUST NOT summarize or soften findings.                                                                                                                                                            |
-| E4 | The agent MUST NOT commit. Step 8 is the human's.                                                                                                                                                                                                      |
+| E4 | The agent MUST NOT commit. Steps 10 and 13 are the human's.                                                                                                                                                                                            |
+| E5 | `specctl index` runs **before** the commit, and its output goes into the same commit as the content. *The pre-commit hook of §20 runs `index --check`. With `index` after the commit, that check fails on every single commit — the hook is unusable, and the first thing anyone does with an unusable hook is bypass it.* |
+| E6 | An edit branch MUST be merged with `--no-ff`, and MUST NOT be squashed or rebase-merged. *A squash replaces the SHAs that `log.md` rows name. The rationale join of §13.6 then finds nothing, and the `Rationale` column of the customer deliverable is silently empty — the one column that answers "why did this change".* `git config branch.<name>.mergeoptions --no-ff` and a repository policy that disables squash merging are both recommended. |
 
 ## 17. Commit message format
 
@@ -1352,7 +1527,9 @@ Every rule and every threshold maps to a named test. No orphans in either direct
 | -------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------- |
 | T-ING-01 | The construct fixture ingests: 3 heading levels, numbered and bulleted lists, a simple table, a merged-cell table, an image, a text box, an equation, an internal cross-reference, a footnote. Every construct appears with the expected type | §6.3, §6.4           |
 | T-ING-02 | Every block has a unique well-formed anchor; front-matter`blocks` equals the anchor count                                                                                                                                                   | FMT-02, ACC-1          |
-| T-ING-03 | `text_fidelity.coverage ≥ 0.99` on the fixture and on the real document                                                                                                                                                                    | §10.12, ACC-2         |
+| T-ING-03 | `text_fidelity.coverage ≥ 0.99` on the fixture and on the real document | §10.12, ACC-2 |
+| T-ING-03b | A fixture whose only uncaptured paragraph is the short string`"Yes"` reports it as uncovered — it does not match another section by accident | §10.12 F8 |
+| T-ING-03c | A table cell containing a literal`\|` is emitted escaped and still counts as covered | §6.6, §10.12 F8 |
 | T-ING-04 | Every internal link resolves to an existing target or appears in`issues`; block-level targets use the `#^` form                                                                                                                           | §6.5, ACC-3           |
 | T-ING-05 | Two runs with`--reingest --now X` produce byte-identical `vault/sections/**` and `vault/assets/**` and allocate zero new IDs                                                                                                            | §9.5, ACC-5           |
 | T-ING-06 | Renaming a heading's text and re-ingesting keeps the section ID and file name                                                                                                                                                                 | §10.10 M4, ACC-5      |
@@ -1378,8 +1555,15 @@ Every rule and every threshold maps to a named test. No orphans in either direct
 | T-VAL-03 | Reordering sentences without changing values produces**no** V10; moving a value between blocks produces V10 on both                           | §12.6 N1      |
 | T-VAL-04 | `mV` → `MV` produces V10                                                                                                                       | §12.6 N3      |
 | T-VAL-05 | Editing a locked figure caption produces V05                                                                                                        | FMT-08         |
-| T-VAL-06 | A merge declared with`supersedes:` passes V04; the same merge without it fails V04; a bogus target fails V04a; a doubly-claimed target fails V04b | §12.5         |
-| T-VAL-07 | `--assign-ids` allocates IDs only to anchorless blocks and leaves every other byte unchanged                                                      | §12.4         |
+| T-VAL-06 | A merge declared with`supersedes:` passes V04; the same merge without it fails V04; a bogus target fails V04a; a doubly-named `supersedes` target fails V04b | §12.5 |
+| T-VAL-06b | A split into three parts, each carrying`split_from:X` and a **new** ID, passes V04 and V04b; `X` is absent from the vault afterwards | §5.4 L2–L3 |
+| T-VAL-06c | That same split produces**one** V10 finding against `X`, comparing the union of the parts — not one finding per part | §12.6 N4 |
+| T-VAL-07 | `assign-ids` allocates IDs only to anchorless blocks, leaves every other byte unchanged, and creates no file | §12.4 |
+| T-VAL-07b | `split-section` moves a heading and its content into a new file with `origin: authored`, `source: null`, `bookmarks: []`, and that file validates | §5.5, §12.9, A.1 |
+| T-VAL-10 | Reordering a locked block's anchor attributes produces**no** V05; editing one of its content lines does | §12.8 |
+| T-VAL-11 | `Sig2`, `CAN_2`, `0x1F` and `3rd` yield no numeric token; `50ms` and `50 ms` yield the same one; `1,5` reads as 1.5 and `1,234` as 1234 | §12.6 |
+| T-VAL-12 | `validate`, and every `--check` invocation, leave the working tree byte-identical — verified by hashing the repository before and after | §9.5 |
+| T-VAL-13 | `registry sync` refuses to write and exits `2` on a tree where `validate` reports an error | §12.10 |
 | T-VAL-08 | On an edit branch with commits, a bare`validate` compares against the merge-base and still reports the changes                                    | §12.2         |
 | T-VAL-09 | Exit code is`2` with any error, `1` with warnings only, `0` clean                                                                             | §9.4          |
 | T-IDX-01 | `index.md` lists every section exactly once and every link resolves                                                                               | §13.2         |
@@ -1439,11 +1623,14 @@ git add -A && git commit -m "[SYS] baseline" && git tag SYS-baseline-v0
 # improving (Problem B)
 git checkout -b edit/SYS-000120-restructure
 #   "Using restructure-section, restructure SYS-000120."
-specctl fmt && specctl validate
+specctl assign-ids && specctl fmt && specctl validate
 # review the diff, approve
+specctl index                                     # before the commit (§16 E5)
 git commit                                        # message per §17
-specctl index && specctl log "restructured 3.2" --section SYS-000120 --skill restructure-section
-git checkout main && git merge edit/SYS-000120-restructure
+specctl registry sync
+specctl log "restructured 3.2" --section SYS-000120 --skill restructure-section
+git commit -m "[SYS] registry + log for $(git rev-parse --short HEAD)"
+git checkout main && git merge --no-ff edit/SYS-000120-restructure   # never squash (§16 E6)
 
 # deliverable
 specctl export xlsx --out exports/SYS.xlsx --compare-to SYS-baseline-v0
@@ -1455,6 +1642,10 @@ specctl export xlsx --out exports/SYS.xlsx --compare-to SYS-baseline-v0
 #!/bin/sh
 specctl fmt --check && specctl validate && specctl index --check
 ```
+
+All three are read-only, so the hook has no side effects and can run as often as git calls it. It
+passes at step 10 because step 9 regenerated the index, and at step 13 because neither `log.md` nor
+`meta/ids.json` is index output (§13.1).
 
 ---
 
@@ -1497,7 +1688,11 @@ specctl fmt --check && specctl validate && specctl index --check
 
 Four schemas ship inside the package at `specctl/schemas/` and are enforced by V01 and by the writers.
 
-**A.1 `section.schema.json`** — section front matter. Required: `id`, `doc`, `number`, `title`, `level`, `order`, `path`, `path_ids`, `breadcrumb`, `bookmarks`, `refs_out`, `blocks`, `words`, `source`, `ingest_version`, `generated`. Optional: `parent`. `additionalProperties: false`.
+**A.1 `section.schema.json`** — section front matter. Required: `id`, `doc`, `number`, `title`, `level`, `order`, `path`, `path_ids`, `breadcrumb`, `bookmarks`, `refs_out`, `blocks`, `words`, `origin`, `source`, `ingest_version`, `generated`. Optional: `parent`. `additionalProperties: false`.
+
+`origin` is `ingest` or `authored`. The schema makes `source` conditional on it: an object when
+`origin` is `ingest`, and `null` with `bookmarks: []` when `origin` is `authored` — a section an
+editor created has no paragraph range in the .docx, because it was never in the .docx.
 
 ```json
 {
@@ -1506,8 +1701,16 @@ Four schemas ship inside the package at `specctl/schemas/` and are enforced by V
   "type": "object",
   "additionalProperties": false,
   "required": ["id","doc","number","title","level","order","path","path_ids",
-               "breadcrumb","bookmarks","refs_out","blocks","words","source",
-               "ingest_version","generated"],
+               "breadcrumb","bookmarks","refs_out","blocks","words","origin",
+               "source","ingest_version","generated"],
+  "allOf": [
+    { "if":   { "properties": { "origin": { "const": "authored" } } },
+      "then": { "properties": { "source":    { "type": "null" },
+                                "bookmarks": { "maxItems": 0 } } } },
+    { "if":   { "properties": { "origin": { "const": "ingest" } } },
+      "then": { "required": ["source"],
+                "properties": { "source": { "type": "object" } } } }
+  ],
   "properties": {
     "id":        { "type": "string", "pattern": "^[A-Z][A-Z0-9]{1,7}-[0-9]{6}$" },
     "doc":       { "type": "string", "pattern": "^[A-Z][A-Z0-9]{1,7}$" },
@@ -1524,7 +1727,8 @@ Four schemas ship inside the package at `specctl/schemas/` and are enforced by V
     "refs_out":  { "type": "array", "items": { "type": "string" } },
     "blocks":    { "type": "integer", "minimum": 1 },
     "words":     { "type": "integer", "minimum": 0 },
-    "source":    { "type": "object", "additionalProperties": false,
+    "origin":    { "enum": ["ingest", "authored"] },
+    "source":    { "type": ["object", "null"], "additionalProperties": false,
                    "required": ["docx","paragraphs"],
                    "properties": {
                      "docx": { "type": "string" },
@@ -1598,6 +1802,7 @@ bookmarks: ["_Ref123456", "_Toc99887"]
 refs_out: ["SYS-000245"]
 blocks: 4
 words: 61
+origin: ingest
 source: { docx: "source/SYS.docx", paragraphs: [412, 447] }
 ingest_version: 1
 generated: false
@@ -1635,14 +1840,19 @@ not exceed 400 Nm/s.
 **After a split** — `SYS-000130` divided in two:
 
 ```markdown
-<!-- id:SYS-000130 type:paragraph -->
-The system shall monitor wheel speed at 100 Hz.
-^sys-000130
-
 <!-- id:SYS-001205 type:paragraph split_from:SYS-000130 -->
-The system shall raise a fault when the wheel speed signal is absent for 200 ms.
+The system shall monitor wheel speed at 100 Hz.
 ^sys-001205
+
+<!-- id:SYS-001206 type:paragraph split_from:SYS-000130 -->
+The system shall raise a fault when the wheel speed signal is absent for 200 ms.
+^sys-001206
 ```
+
+`SYS-000130` is **gone from the vault**. `meta/ids.json` records it as
+`{"status": "split", "split_into": ["SYS-001205", "SYS-001206"]}`, so a citation of the retired ID
+still resolves to where its content went. Both parts export as `split`, each carrying
+`SYS-000130`'s text in `Old content`.
 
 ### Appendix E — Python package layout
 
@@ -1666,10 +1876,14 @@ specctl/
 │   └── writer.py             # §10.11
 ├── fmtcmd/frontmatter.py     # §11
 ├── validate/
-│   ├── rules.py              # V01–V17
-│   ├── numeric.py            # §12.6
-│   ├── lineage.py            # §12.5
+│   ├── rules.py              # V01–V17, V05 comparison per §12.8
+│   ├── numeric.py            # §12.6 — tokens, boundaries, lineage grouping (N4)
+│   ├── lineage.py            # §12.5 — reporting only, never writes
 │   └── units.txt
+├── idcmd/
+│   ├── assign.py             # §12.4  specctl assign-ids
+│   ├── split.py              # §12.9  specctl split-section
+│   └── sync.py               # §12.10 specctl registry sync
 ├── indexgen/{index,backlinks,log,coverage}.py
 ├── exportx/xlsx.py
 └── schemas/*.json

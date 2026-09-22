@@ -170,6 +170,8 @@ Mỗi tính năng ghi rõ: làm gì, chặn thất bại nào trong bốn thất
 **Chặn:** cả bốn thất bại, ở mức định nghĩa.
 **Xong khi:** có một văn bản nêu rõ từng quyết định trên, và không còn chỗ nào trong đặc tả kỹ thuật nói ngược lại.
 
+**Trạng thái: xong.** Quyết định và lý do ở `G-data-contract.md`; quy tắc đã được áp vào `D-implementation-spec.md` v2.1. Quyết định 1 làm lộ thêm một lỗi chưa ai nêu: nếu mỗi phần sau khi tách được so số riêng với khối gốc thì mọi lần tách đều báo sai "mất số" — nên phép so số giờ **gom nhóm** theo lineage, một lần tách là một phép so. Chín test mới đi kèm, trong đó một test băm cả repo trước và sau mỗi lần chạy lệnh kiểm tra, để nguyên tắc "chỉ đọc" không bị xói mòn dần.
+
 ### F02 · Khung chương trình
 
 **Làm gì:** cấu trúc package Python, một chương trình dòng lệnh với các lệnh con, cách đọc cấu hình (tham số dòng lệnh → biến môi trường → file cấu hình → giá trị mặc định), quy ước mã thoát, và tham số cố định đồng hồ để chạy lại ra kết quả giống nhau.
@@ -491,6 +493,7 @@ Ba thứ không phải implementer quyết được:
 | File | Trạng thái | Dùng để |
 |---|---|---|
 | `F-features.md` | **Đang hiệu lực** | Tài liệu này. Vấn đề, phương pháp, thứ tự tính năng. Đọc trước |
-| `D-implementation-spec.md` | **Đang hiệu lực** | Đặc tả kỹ thuật chi tiết. Tra khi cần biết một quy tắc chính xác ra sao. Đọc sau khi đã hiểu tài liệu này |
+| `D-implementation-spec.md` | **Đang hiệu lực** | Đặc tả kỹ thuật chi tiết, v2.1. Tra khi cần biết một quy tắc chính xác ra sao. Đọc sau khi đã hiểu tài liệu này |
+| `G-data-contract.md` | Tham khảo | Tám quyết định của F01 và lý do từng cái. Không chuẩn — quy tắc nằm trong D. Tra khi muốn biết "vì sao quy tắc này lại thế" |
 | `B-limitations-roadmap.md` | **Đang hiệu lực** | Cái gì cố tình bỏ, và khi nào thì nên đầu tư thêm. Dành cho owner và stakeholder |
 | `archive/` | Lịch sử | Bản giao đầu tiên, danh sách rà soát nó, và bản review dẫn tới tài liệu này. Giữ để tra nguồn gốc quyết định, **không implement từ đó** |
