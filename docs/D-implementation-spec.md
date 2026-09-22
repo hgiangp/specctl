@@ -1,6 +1,6 @@
 # specctl — Implementation Specification
 
-**Version:** 2.2 · **Date:** 2026-09-22 · **Status:** Normative
+**Version:** 2.3 · **Date:** 2026-09-22 · **Status:** Normative
 **Supersedes:** `archive/A-solution-spec-handoff.md` v1.0 — which is retained as history and MUST NOT be implemented from.
 **Audience:** implementer (human or coding agent). §1.5 is for the solution owner.
 **Companions:** `B-limitations-roadmap.md` — what this phase deliberately does not do, and when to extend it. `archive/C-spec-gaps.md` — the 31 findings against v1.0 that this document resolves; read it only to understand *why* a rule is what it is.
@@ -65,7 +65,15 @@ Three inputs are not the implementer's to decide. Each has a due date in the §2
 
 *Note on [OWNER-3]: this may already be covered by the customer agreement. The requirement is that the document say so, because this document is what a coding agent and a reviewer work from.*
 
-### 1.6 What changed in v2.2
+### 1.6 What changed in v2.3
+
+| # | Decision | Sections changed |
+| - | -------- | ---------------- |
+| 12 | **`python-docx` is dropped.** Its object model hides `w:sdt`, `mc:AlternateContent`, `w:ins` and `w:del` — precisely what §10.5 must see — so a walker built on it would carry the silent-loss path the walker exists to close. Fixtures are raw OOXML, read with `lxml` | §18.3, App. E |
+| 13 | **`degraded.docx` is built, not hand-authored**, since Word only writes valid OOXML | §18.3 |
+| 14 | **Fixture contents are verified against the raw OOXML**, and `*.docx` is marked `binary` in `.gitattributes` | §18.3 |
+
+### 1.7 What changed in v2.2
 
 Three contradictions in the file format, found by implementing it. Each was discovered
 because a conforming file failed to survive being written and read back.
@@ -76,7 +84,7 @@ because a conforming file failed to survive being written and read back.
 | 10 | **A heading block is exactly one line.** §6.1's grammar allowed content lines after the heading line, which §6.3 and Appendix D both contradict | §6.1 |
 | 11 | **§10.11's YAML style rule replaced with a table.** It said "flow style only for `source`", while both worked front-matter blocks use flow sequences for `path`, `path_ids`, `bookmarks` and `refs_out`. The quoting rule is now stated precisely, and applies to YAML 1.1 *and* 1.2 spellings — `1e5` is a string to one and a float to the other, and the vault is read by Obsidian as well as by `specctl` | §10.11 |
 
-### 1.7 What changed in v2.1
+### 1.8 What changed in v2.1
 
 v2.1 resolves eight places where v2.0 contradicted itself or specified something unimplementable.
 Nothing was added or removed in scope; every change makes an existing rule usable. The decision
@@ -97,7 +105,7 @@ One consequence of decision 1 required a further change: §12.6 N4 now compares 
 split's parts against the original, as one finding. Comparing each part separately would report every
 value that landed in a sibling as removed — a false alarm on every split.
 
-### 1.8 What changed from v1.0
+### 1.9 What changed from v1.0
 
 v1.0's §5 contradicted itself in five places, omitted two mechanisms the workflow depends on (block lineage, a stable re-ingest key), stated two acceptance thresholds against undefined metrics, and did not address four silent-data-loss paths in .docx parsing. All 31 findings are resolved here as ordinary spec text. Appendix G maps each finding to the section that resolves it, and each v1.0 section to its successor here.
 
@@ -1652,11 +1660,30 @@ Every rule and every threshold maps to a named test. No orphans in either direct
 
 | Fixture             | How produced                                                                                                                              |
 | ------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
-| `constructs.docx` | **Hand-authored in Word** and committed. `python-docx` cannot author text boxes, SmartArt or OLE objects, which T-ING-01 requires |
-| `revisions.docx`  | Hand-authored: one tracked insertion, one tracked deletion, one comment                                                                   |
+| `constructs.docx` | **Hand-authored in Word** and committed. Only Word can produce a real content control, SmartArt or an OLE object, which T-ING-01 requires |
+| `revisions.docx`  | Hand-authored: one tracked insertion, one tracked deletion, one comment, **saved without accepting them**                           |
 | `containers.docx` | Hand-authored: paragraphs inside`w:sdt`, a TOC field, a header and a footer                                                             |
-| `degraded.docx`   | Hand-authored: a table that cannot be serialized in either form                                                                           |
-| `simple_*.docx`   | Generated programmatically with`python-docx` at test time — headings, lists, simple tables, cross-references                           |
+| `degraded.docx`   | **Built from raw OOXML** by `tests/support/docx.py`. Word always writes *valid* OOXML, so a table representable in neither form cannot be authored in it |
+| `simple_*.docx`   | Built from raw OOXML at test time by the same module — headings, lists, simple tables, cross-references                             |
+
+**Fixture contents are verified, not assumed.** `tests/test_fixtures.py` inspects each
+file's raw OOXML and fails naming the construct that is absent, because Word does not
+always save what the author intended: accepting tracked changes before saving removes the
+`w:del`, emptying a content control makes Word drop the `w:sdt`, a TOC pasted as text has
+no field codes, and a picture inserted as a link stores no image part. Each of those
+yields a fixture that opens correctly and tests nothing — and the failure then surfaces in
+§10.5 as "the walker loses text", blaming the walker for a construct that was never in the
+file.
+
+`*.docx` MUST be marked `binary` in `.gitattributes`. A .docx is a ZIP; if git ever
+normalizes its line endings the archive is corrupt, and the corruption is invisible until
+something opens it.
+
+*Note on `python-docx`: it is **not** used, for fixtures or anywhere else. Its object
+model hides exactly the elements §10.5 must see — `w:sdt`, `mc:AlternateContent`, `w:ins`
+and `w:del` — so building the walker on it would create the silent-loss path the walker
+exists to close. Fixtures are written as raw OOXML and read with `lxml`: one model of the
+document, not two.*
 
 ---
 
@@ -1961,7 +1988,10 @@ specctl/
 tests/fixtures/*.docx
 ```
 
-Dependencies: `python-docx`, `lxml`, `typer`, `openpyxl`, `pyyaml`, `rapidfuzz`, `jsonschema`, `pytest`. Optional external binary: `libreoffice`. Pandoc is **not** used.
+Dependencies: `lxml`, `typer`, `openpyxl`, `pyyaml`, `rapidfuzz`, `jsonschema`, `pytest`,
+`hypothesis`. Optional external binary: `libreoffice`. Pandoc is **not** used, and neither
+is `python-docx` (§18.3) — the walker reads `document.xml` through `lxml` directly, so the
+document has one model rather than two.
 
 ### Appendix F — Glossary
 

@@ -227,6 +227,19 @@ Ba quyết định này ghi ở `G-data-contract.md`, quy tắc đã áp vào D 
 **Chặn:** thất bại 1.
 **Xong khi:** bảy ca kể trên có file tương ứng và bộ đọc chạy được trên tất cả; đường hạ cấp ở F10 có một ca hỏng có chủ ý để kiểm chứng.
 
+**Trạng thái: hạ tầng xong, chờ 3 file Word.** Đã có: bộ sinh OOXML (kèm ca hỏng có chủ ý, tất định từng byte), registry mô tả từng file phải chứa gì, `tests/fixtures/README.md` ghi nguồn gốc, và `.gitattributes` đánh dấu `*.docx` là binary.
+
+Phần đáng nêu nhất: **nội dung file được kiểm tra, không phải chỉ tên file.** `tests/test_fixtures.py` đọc thẳng OOXML và báo đúng construct nào thiếu, vì Word thường không lưu đúng cái người viết nghĩ:
+
+| Việc vô tình làm | Kết quả |
+|---|---|
+| Accept tracked changes trước khi lưu | Mất `w:del`. File mở vẫn bình thường và test không kiểm gì cả |
+| Xoá hết nội dung trong content control | Word bỏ luôn thẻ `w:sdt` khi lưu |
+| Dán mục lục dưới dạng text | Không có field code, nên không có gì để skip |
+| Chèn ảnh bằng "link to file" | Không có phần ảnh nào trong package |
+
+Mỗi trường hợp trên về sau sẽ hiện ra dưới dạng "bộ đọc làm mất chữ", và bộ đọc bị quy trách nhiệm cho một construct chưa từng có trong file. Kiểm tra đặt lỗi về đúng chỗ gây ra nó.
+
 ---
 
 ## Nhóm B — Chuyển đổi tin cậy
