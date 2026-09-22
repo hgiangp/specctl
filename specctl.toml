@@ -1,0 +1,24 @@
+# specctl configuration (§9.2, DEC-13).
+# Resolution order: command-line flag → SPECCTL_<FLAT_NAME> → this file → built-in default.
+# `specctl --verbose <command>` prints every resolved value and where it came from.
+
+[project]
+doc_key        = "SYS"
+split_level    = 2
+default_branch = "main"
+source         = "source/SYS.docx"
+vault          = "vault"
+
+[gates]
+links    = 95      # percent of internal links that must resolve (ACC-3)
+tables   = 90      # percent of tables kept as pipe or HTML (ACC-4)
+fidelity = 0.99    # fraction of source text found in the vault (ACC-2)
+
+[validate]
+large_section_words = 1500
+decimal_comma       = false   # true when the source writes decimals as "1,5" (§12.6)
+extra_units         = []      # project-specific unit symbols, added to Appendix C
+
+[export]
+out        = "exports/SYS.xlsx"
+compare_to = "SYS-baseline-v0"

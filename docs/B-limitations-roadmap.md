@@ -1,7 +1,7 @@
 # Hạn chế và lộ trình mở rộng
 
 **Phiên bản:** 1.0 · **Ngày:** 2026-09-20
-**Đi kèm:** `A-solution-spec-handoff.md` (bản giao cho coding agent)
+**Đi kèm:** `F-features.md` (vấn đề, phương pháp, thứ tự tính năng) và `D-implementation-spec.md` (chi tiết kỹ thuật)
 **Người đọc:** owner và stakeholder. Dùng để quyết định *khi nào* đầu tư thêm, và *đầu tư vào đâu*.
 
 ---
