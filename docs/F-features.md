@@ -228,7 +228,7 @@ Ba quyết định này ghi ở `G-data-contract.md`, quy tắc đã áp vào D 
 **Chặn:** thất bại 1.
 **Xong khi:** bảy ca kể trên có file tương ứng và bộ đọc chạy được trên tất cả; đường hạ cấp ở F10 có một ca hỏng có chủ ý để kiểm chứng.
 
-**Trạng thái: xong, nhưng 3 file Word vẫn còn nợ.** 330 test xanh (321 khi không có pandoc). Bảy ca khó đều có file chứa nó trên đĩa, và bộ đọc chạy được trên tất cả — đó là tiêu chí "xong khi" ở trên. Ca hỏng có chủ ý cho F10 đã commit.
+**Trạng thái: xong, nhưng 3 file Word vẫn còn nợ.** 394 test xanh, 4 skip (381/17 khi không có pandoc) — sau khi merge với F05. Bảy ca khó đều có file chứa nó trên đĩa, và bộ đọc chạy được trên tất cả — đó là tiêu chí "xong khi" ở trên. Ca hỏng có chủ ý cho F10 đã commit.
 
 **Cách giải quyết chỗ kẹt.** Đường chính vẫn là gõ tay trong Word, và không có gì thay được nó. Nhưng để F04 chặn cả nhóm B trong lúc chờ là trả giá quá đắt, nên mỗi file Word giờ có một **file thế chỗ** sinh từ OOXML thuần (`built_constructs.docx`, `built_revisions.docx`, `built_containers.docx`), commit vào repo. Ba điểm làm cho nó không biến thành cái cớ để không giao file thật:
 
@@ -239,6 +239,10 @@ Ba quyết định này ghi ở `G-data-contract.md`, quy tắc đã áp vào D 
 **Cái mà file sinh ra không chứng minh được — và một bug thật lộ ra từ đó.** File sinh chứng minh bộ đọc xử lý được một construct; nó **không** chứng minh construct đó đúng hình dạng Word ghi ra, vì `lxml` đọc được mọi XML hợp cú pháp. Đem hỏi một bộ đọc độc lập (pandoc) thì ra ngay: bộ sinh đang ghi track changes dưới dạng bọc cả `w:p` trong một `w:ins`. Dạng đó parse được, qua được kiểm tra `//w:ins`, và **bị pandoc bỏ im lặng** — trong khi Word ghi `w:ins` ở mức run, bên trong `w:p`, còn dấu kết đoạn được đánh dấu riêng ở `w:pPr/w:rPr`.
 
 Nếu không bắt được, F05 sẽ được viết theo một hình dạng Word không bao giờ tạo ra: xanh hết trên fixture, và **mất đoạn văn được chèn** trên tài liệu customer. Đúng thất bại 1, đúng dạng im lặng nhất của nó. Đã sửa bộ sinh, thêm một yêu cầu bắt buộc về hình dạng run-level, và một test hỏi thẳng bộ đọc độc lập thay vì hỏi parser của chính mình.
+
+**Sửa fixture xong thì lộ tiếp một bug trong F05.** Word ghi một đoạn được chèn bằng **hai** thẻ `w:ins` — một quanh các run, một trên dấu kết đoạn. Bộ đếm của W2 đang đếm cả hai, nên mọi đoạn văn người review gõ một lần sẽ được báo là hai lần chèn, và con số trong `coverage.json` mất ý nghĩa "tài liệu bẩn tới đâu". Đã sửa: đếm revision ở phần nội dung, còn revision trên dấu kết đoạn chỉ đếm khi trong đoạn đó không có revision cùng loại — vì một lần tách/gộp đoạn mà không đổi chữ vẫn là revision chưa giải quyết, không được im. Quy tắc ghi vào D §10.5.
+
+Đây là lý lẽ cho cả F04: fixture đúng không phải để test xanh, mà để **bug xuất hiện sớm**. Hai bug trên đều là loại không có triệu chứng nào cho tới khi chạy trên tài liệu thật.
 
 Phần đáng nêu tiếp theo: **nội dung file được kiểm tra, không phải chỉ tên file.** `tests/test_fixtures.py` đọc thẳng OOXML và báo đúng construct nào thiếu, vì Word thường không lưu đúng cái người viết nghĩ:
 
@@ -268,6 +272,23 @@ Cuối cùng: **file nhị phân commit vào repo là thứ không ai review đ�
 
 **Chặn:** thất bại 1.
 **Xong khi:** chạy đúng trên cả bảy ca của F04; ca track changes phát ra phần chèn, bỏ phần xoá, và đếm đúng cả hai.
+
+**Trạng thái: xong phần code và test dựng bằng XML; 6 test chờ 3 file Word của F04.** 350 test xanh. Bộ đọc nằm ở `specctl/ingest/`: `package.py` (mở gói, trả về từng part) và `walk.py` (vòng đệ quy, W1–W6). Ra khỏi nó là một **luồng khối** — chưa phải Markdown. Quyết định bảng trình bày thế nào (F09), shape hạ cấp ra sao (F10), khối nào thuộc section nào (F07) đều đọc luồng này. Tách như vậy để câu hỏi "có mất gì không" trả lời được một mình: chữ đã vào luồng thì không giai đoạn nào sau đó làm mất nó mà không nêu lý do.
+
+Điểm đáng ghi:
+
+- **Test ở đây phần lớn là khẳng định phủ định.** "Phần chèn được phát ra" mới là nửa test; nửa còn lại là "phần xoá thì không", và nửa thứ ba là "cả hai đều được đếm" — vì nhìn từ ngoài, một lần bỏ im lặng và một lần bỏ có ghi nhận trông giống hệt nhau nếu không ai đếm.
+- **Trạng thái field phải sống qua nhiều đoạn văn.** Một TOC mở ở đoạn này và đóng ở đoạn cách đó vài chục đoạn. Chỉ xét đoạn đang cầm thì giữ nguyên cả mục lục thành yêu cầu; quên pop thì **bỏ im lặng toàn bộ phần còn lại của tài liệu**. Có test cho cả hai chiều.
+- **`TOCHeading` cố tình không bị bỏ.** Nó là style của chính dòng chữ "Table of Contents" — một heading tài liệu thật sự có. Lọc theo tiền tố `TOC` sẽ nuốt nó.
+- **Chỉ mục đoạn văn được xây bằng `id()` của phần tử lxml, nên mọi phần tử đã đánh số đều được giữ sống.** lxml giải phóng proxy khi hết tham chiếu và cấp lại đúng địa chỉ đó cho proxy kế tiếp — một bản đồ theo `id()` sẽ bắt đầu trỏ sai đoạn, không báo gì. Cùng một cái bẫy đã có sẵn trong `tests/test_pandoc_oracle.py` và đã sửa luôn.
+- **Đoạn bị bỏ vẫn tiêu thụ số thứ tự của nó.** Chỉ mục trỏ vào *bản gốc*; đánh số lại quanh chỗ đã bỏ làm mọi issue lệch đi một đoạn so với thứ nó nói tới.
+
+Hai lỗi thật mà việc implement làm lộ ra, cả hai đều nằm ở **công cụ trọng tài**, không phải ở bộ đọc — ghi ở `G-data-contract.md` quyết định 15, quy tắc đã áp vào D v2.3:
+
+- **Phép đo độ trung thực đếm một text box thành ba đoạn nguồn**, trong đó một đoạn là hai nhánh `mc:Choice` và `mc:Fallback` dính liền nhau — một chuỗi không tồn tại ở đâu trong tài liệu, nên không bộ ghi nào phát ra được và nó vĩnh viễn nằm trong danh sách "chưa bao phủ". ACC-2 tụt khoảng một đoạn cho mỗi text box. Đây là F1 ở chiều ngược lại: con số bị bóp xuống bởi chính cách đếm.
+- **Test oracle so với pandoc không lọc mục lục**, trong khi §10.12 F2 nói mục lục ngoài phạm vi và §10.5 W4 bỏ nó có ghi nhận. Pandoc phát ra dòng mục lục như đoạn văn thường, nên khi `containers.docx` có mặt, test sẽ báo bộ đọc của ta "làm mất" đúng những dòng đặc tả bảo phải bỏ. Đã kiểm chứng bằng ba file dựng thay cho ba file Word chưa có: sau khi sửa, độ bao phủ 1.0000 trên cả ba và oracle không tìm ra đoạn nào pandoc lấy được mà ta không.
+
+**Còn chờ:** 6 test skip cho đến khi có `constructs.docx`, `revisions.docx`, `containers.docx` (xem mục 9). Chúng là các test chạy trên OOXML **Word thật sự ghi ra** — file dựng bằng XML chỉ chứng minh bộ đọc xử lý đúng cái OOXML mà ta tưởng tượng.
 
 ### F06 · Đánh số mục và số danh sách
 

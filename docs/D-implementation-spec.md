@@ -72,6 +72,7 @@ Three inputs are not the implementer's to decide. Each has a due date in the §2
 | 12 | **`python-docx` is dropped.** Its object model hides `w:sdt`, `mc:AlternateContent`, `w:ins` and `w:del` — precisely what §10.5 must see — so a walker built on it would carry the silent-loss path the walker exists to close. Fixtures are raw OOXML, read with `lxml` | §18.3, App. E |
 | 13 | **`degraded.docx` is built, not hand-authored**, since Word only writes valid OOXML | §18.3 |
 | 14 | **Fixture contents are verified against the raw OOXML**, and `*.docx` is marked `binary` in `.gitattributes` | §18.3 |
+| 15 | **The fidelity source side de-duplicates a text box** (F05). Word nests a box's paragraphs inside their anchor and writes the box under both `mc:Choice` and `mc:Fallback`, so the naive reading of §10.12 step 1 counts one sentence three times and fabricates a fourth string that nothing can match | §10.12 F4 |
 
 ### 1.7 What changed in v2.2
 
@@ -956,6 +957,13 @@ def walk(node, ctx):
 > readers discard it without a word. The fixture builder emitted exactly that shape until an
 > independent reader was pointed at it; the walker MUST handle the run-level form, and
 > `tests/support/fixtures.py` requires the fixtures to be in it.
+>
+> It follows that a paragraph a reviewer inserted once carries **two** `w:ins` elements. The
+> counters of W2 count content revisions, so a revision on the paragraph mark is counted only
+> when no content revision of that kind was found in the same paragraph — otherwise every
+> inserted paragraph in the source would be reported twice and the number would say nothing
+> about how dirty the document is. A paragraph split or merged with no text changed is a real
+> unresolved revision and is still counted, which is why the mark is not simply ignored.
 
 ### 10.6 Table representation
 
@@ -1110,7 +1118,7 @@ added_chars := sum of characters the writer introduced:
 | F1 | Coverage is**directional**. Text the writer adds cannot raise it. *A net character ratio scores 1.00 on a vault that dropped 1% of paragraphs and added 1% of numbering, and can exceed 1 — at which point it is not interpretable at all.* |
 | F2 | Scope is exactly`body`, `footnotes`, `textboxes`. Headers, footers and TOC results are out of scope and are accounted in `skipped`.                                                                                                          |
 | F3 | The source side is computed against the**accepted revision state** (§10.5 W1), so a discarded `w:del` run is never counted as uncovered.                                                                                                    |
-| F4 | Text emitted twice — a text box appears both in its rendered block and in its`raw` block — counts once on the source side and contributes nothing extra to coverage.                                                                             |
+| F4 | Text emitted twice — a text box appears both in its rendered block and in its`raw` block — counts once on the source side and contributes nothing extra to coverage. **On the source side this has to be constructed, not assumed.** A text box's paragraphs are nested *inside* the paragraph that anchors it, and Word writes the box twice — DrawingML under `mc:Choice`, VML under `mc:Fallback`. Step 1's loop over paragraphs therefore MUST take one branch only (`mc:Choice`, else `mc:Fallback`) and MUST exclude `w:txbxContent` text from the anchoring paragraph's own text. A plain join over `w:t` descendants yields the sentence three times, and the third is the two branches concatenated — a string no writer can emit, so it counts as uncovered for ever and depresses ACC-2 by roughly one segment per text box. |
 | F5 | Every uncovered segment MUST be listed in`text_fidelity.uncovered` with its paragraph index, character count and reason. A failing number must be actionable, not merely low.                                                                      |
 | F6 | `coverage` is the ACC-2 metric and the `--fail-under-fidelity` gate.                                                                                                                                                                             |
 | F7 | **`candidate_sections(seg)`** is: the section owning the source paragraph `seg` came from, then that section's parent, then its children, then every remaining section in document order. The segmenter (§10.9) already assigned every source paragraph to a section, so `owning_section` is a lookup, not a search. The order exists to make the first hit deterministic and the scan cheap; for a long segment every section is eligible. |
@@ -2006,6 +2014,7 @@ specctl/
 ├── textutil.py               # normalize, normalize_ws, to_plain_text, words (§6.6)
 ├── ingest/
 │   ├── package.py            # docx zip + xml loading
+│   ├── report.py             # issue codes, skip accounting, revision counts (§8)
 │   ├── walk.py               # block stream, sdt/ins/del/TOC handling (§10.5)
 │   ├── numbering.py          # §10.3
 │   ├── anchors.py            # bookmarks, hyperlinks, REF fields (§10.4)

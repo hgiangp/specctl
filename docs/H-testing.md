@@ -1,7 +1,7 @@
 # Chạy và kiểm chứng specctl
 
 **Người đọc:** người chạy test trên máy mình.
-**Trạng thái hiện tại:** F01–F04 xong. F05 (bộ đọc Word) chưa làm — nên mọi lệnh `specctl` đều báo "not implemented yet" và nêu tên feature sẽ làm nó. Đó là hành vi đúng, không phải lỗi.
+**Trạng thái hiện tại:** F01–F05 xong. Bộ đọc OOXML (`specctl/ingest/`) chạy được và có test; `specctl ingest` vẫn báo "not implemented yet" vì nó còn cần F06–F11 để ghi ra vault. Đó là hành vi đúng, không phải lỗi.
 
 ---
 
@@ -33,8 +33,8 @@ pytest
 Kết quả mong đợi **khi chưa có file .docx gõ tay trong Word của bạn**:
 
 ```
-321 passed, 16 skipped     # không cài pandoc
-330 passed,  7 skipped     # có cài pandoc
+394 passed,  4 skipped     # có cài pandoc
+381 passed, 17 skipped     # không cài pandoc
 ```
 
 Skip ở đây là đúng và có ý nghĩa — xem chúng là gì:
@@ -45,10 +45,10 @@ pytest -rs          # in lý do của từng skip
 
 | Skip | Nghĩa là |
 |---|---|
-| 4 skip về fixture | `constructs.docx`, `revisions.docx`, `containers.docx` chưa có trong `tests/fixtures/`. Các file `built_*.docx` đang gánh các ca đó |
-| 9 skip về pandoc | Chưa cài pandoc — xem mục 5 |
+| 4 skip về fixture | `constructs.docx`, `revisions.docx`, `containers.docx` chưa có trong `tests/fixtures/`. Các file `built_*.docx` đang gánh các ca đó, nên test F05 và test oracle **vẫn chạy** |
+| 13 skip nữa nếu chưa cài pandoc | Pandoc không phải dependency của `specctl` — xem mục 5 |
 
-Nếu **không có skip nào về fixture** thì ba file Word đã có mặt và mọi test đã tự chuyển sang dùng chúng. Nếu có test đỏ, xem mục 7.
+Nếu **không có skip nào về fixture** thì ba file Word đã có mặt và mọi test đã tự chuyển sang dùng chúng. Nếu số test khác đi, hoặc có test đỏ, xem mục 7.
 
 ### Chạy từng phần
 
@@ -57,6 +57,7 @@ pytest tests/test_sectionfile.py -v    # vòng đọc-ghi, phần lõi nhất
 pytest tests/test_textutil.py -v       # ba hàm văn bản (§6.6)
 pytest tests/test_derived.py -v        # front matter dẫn xuất
 pytest tests/test_fixtures.py -v       # kiểm tra file .docx của bạn
+pytest tests/test_walk.py -v           # bộ đọc OOXML (§10.5 W1–W6)
 pytest -k "round_trip or canonical"    # theo tên
 ```
 
@@ -68,6 +69,9 @@ pytest -k "round_trip or canonical"    # theo tên
 | `test_parse_of_serialize_is_the_identity` | Vòng đọc-ghi trên hàng trăm đầu vào sinh tự động | Test đòn bẩy cao nhất của cả dự án |
 | `test_a_fenced_code_block_keeps_its_internal_blank_lines` | Khối phân định bằng anchor, không bằng dòng trắng | Cắt theo dòng trắng sẽ cắt cụt nội dung mà file vẫn parse |
 | `tests/test_netguard.py` | Không có kết nối mạng nào trong suốt bộ test | Chứng minh bằng máy rằng không có AI nào trong đường chuyển đổi |
+| `test_a_tracked_insertion_is_emitted_and_a_tracked_deletion_is_not` | Phần chèn ra, phần xoá không ra | Bộ đọc gom `w:t` sẽ phát đoạn đã xoá như yêu cầu còn hiệu lực — nội dung sai tạo ra bằng cách **đọc sai** |
+| `test_a_field_that_spans_paragraphs_closes_again_afterwards` | Trạng thái TOC đóng lại đúng chỗ | Quên pop field là bỏ im lặng toàn bộ phần còn lại của tài liệu |
+| `test_an_unrecognised_container_is_descended_into_and_reported` | W6 — vẫn đi xuống, và có ghi chú | Cái chặn được construct mà chưa ai từng thấy |
 | `test_assert_deterministic_catches_a_drifting_writer` | Bộ băm cây **phát hiện được** khi không tất định | Một harness luôn pass là loại test đắt nhất |
 
 ---
@@ -261,6 +265,8 @@ pytest tests/test_fixtures.py::test_each_present_fixture_contains_what_it_promis
 
 ## 8. Sau khi mọi thứ xanh
 
-Bước tiếp theo là **F05** — bộ đọc OOXML. Đó là nơi rủi ro mất dữ liệu tập trung nhất, và cũng là lúc `test_our_reader_finds_everything_pandoc_finds` bắt đầu có tác dụng.
+Bước tiếp theo là **F06** (đánh số mục) và **F07** (chia file theo section), cả hai đọc luồng khối mà F05 phát ra.
+
+Việc đáng làm trước cả hai: đặt 3 file `.docx` vào `tests/fixtures/`. 14 test đang skip sẽ chạy, trong đó có `test_our_reader_finds_everything_pandoc_finds` — trọng tài độc lập duy nhất của bộ đọc.
 
 Thứ tự đầy đủ các feature: `F-features.md`.
