@@ -381,3 +381,101 @@ def is_docx(path: Path) -> bool:
             return "word/document.xml" in archive.namelist()
     except (zipfile.BadZipFile, OSError):
         return False
+
+
+# --------------------------------------------------------------------------- F05 builders
+
+REL_BASE = "http://schemas.openxmlformats.org/officeDocument/2006/relationships"
+
+
+def _wrapped_part(tag: str, body: str) -> str:
+    return f"<w:{tag} {_NS_DECL}>{body}</w:{tag}>"
+
+
+def header_part(*paragraphs: str) -> str:
+    """A `word/headerN.xml` part. Skipped whole and accounted by W5 (§10.5)."""
+    return _wrapped_part("hdr", "".join(paragraphs))
+
+
+def footer_part(*paragraphs: str) -> str:
+    return _wrapped_part("ftr", "".join(paragraphs))
+
+
+def footnotes_part(notes: Mapping[int, str], *, with_separators: bool = True) -> str:
+    """A `word/footnotes.xml`. Word puts the separator furniture at ids -1 and 0, which
+    W5 accounts and skips — a fixture without them would not test that."""
+    body: list[str] = []
+    if with_separators:
+        body.append(
+            f'<w:footnote w:type="separator" w:id="-1">{paragraph(runs="<w:r><w:separator/></w:r>")}</w:footnote>'
+        )
+        body.append(
+            f'<w:footnote w:type="continuationSeparator" w:id="0">'
+            f'{paragraph(runs="<w:r><w:continuationSeparator/></w:r>")}</w:footnote>'
+        )
+    for note_id, text in sorted(notes.items()):
+        body.append(f'<w:footnote w:id="{note_id}">{paragraph(text)}</w:footnote>')
+    return _wrapped_part("footnotes", "".join(body))
+
+
+def comments_part(comments: Mapping[int, str]) -> str:
+    body = "".join(
+        f'<w:comment w:id="{cid}" w:author="Reviewer" w:date="2026-01-01T00:00:00Z">'
+        f"{paragraph(text)}</w:comment>"
+        for cid, text in sorted(comments.items())
+    )
+    return _wrapped_part("comments", body)
+
+
+def comment_anchor(text: str, *, comment_id: int = 1) -> str:
+    """Runs carrying a comment: the text stays, the anchor is dropped and counted (W3)."""
+    return (
+        f'<w:commentRangeStart w:id="{comment_id}"/>'
+        + run(text)
+        + f'<w:commentRangeEnd w:id="{comment_id}"/>'
+        + f'<w:r><w:commentReference w:id="{comment_id}"/></w:r>'
+    )
+
+
+def smart_tag(inner: str, *, element: str = "place") -> str:
+    """A `w:smartTag` — packaging the walker steps straight through (§10.5)."""
+    return f'<w:smartTag w:uri="urn:test" w:element="{element}">{inner}</w:smartTag>'
+
+
+def unknown_container(inner: str, *, tag: str = "x:未知") -> str:
+    """An element no rule names, holding real paragraphs — the W6 case.
+
+    W6 is the rule that makes the walker safe against a construct nobody anticipated:
+    descend anyway, and leave a note. A fixture for it cannot use a real OOXML element,
+    because then it would not be unknown.
+    """
+    return f'<{tag} xmlns:x="urn:test">{inner}</{tag}>'
+
+
+def fld_simple_toc(result: str) -> str:
+    """The simple-field spelling of a TOC (W4 names both forms)."""
+    return (
+        '<w:p><w:fldSimple w:instr=" TOC \\o &quot;1-3&quot; \\h ">'
+        + run(result)
+        + "</w:fldSimple></w:p>"
+    )
+
+
+def ole_object(text: str = "") -> str:
+    """A `w:object` — the OLE case of §10.7, which has no extractable bitmap."""
+    inner = run(text) if text else ""
+    return (
+        "<w:p><w:r><w:object>"
+        '<v:shape><v:imagedata r:id="rIdOle"/></v:shape>'
+        '<o:OLEObject xmlns:o="urn:schemas-microsoft-com:office:office" '
+        f'Type="Embed" ProgID="Excel.Sheet.12" r:id="rIdOle"/>{inner}'
+        "</w:object></w:r></w:p>"
+    )
+
+
+def add_part(package: "DocxPackage", name: str, xml: str, rel_type: str) -> "DocxPackage":
+    """Attach a part and the relationship that points at it, as Word writes both."""
+    package.parts[name] = xml
+    rel_id = f"rId{len(package.relationships) + 100}"
+    package.relationships.append((rel_id, f"{REL_BASE}/{rel_type}", name))
+    return package

@@ -256,6 +256,23 @@ Mỗi trường hợp trên về sau sẽ hiện ra dưới dạng "bộ đọc 
 **Chặn:** thất bại 1.
 **Xong khi:** chạy đúng trên cả bảy ca của F04; ca track changes phát ra phần chèn, bỏ phần xoá, và đếm đúng cả hai.
 
+**Trạng thái: xong phần code và test dựng bằng XML; 6 test chờ 3 file Word của F04.** 350 test xanh. Bộ đọc nằm ở `specctl/ingest/`: `package.py` (mở gói, trả về từng part) và `walk.py` (vòng đệ quy, W1–W6). Ra khỏi nó là một **luồng khối** — chưa phải Markdown. Quyết định bảng trình bày thế nào (F09), shape hạ cấp ra sao (F10), khối nào thuộc section nào (F07) đều đọc luồng này. Tách như vậy để câu hỏi "có mất gì không" trả lời được một mình: chữ đã vào luồng thì không giai đoạn nào sau đó làm mất nó mà không nêu lý do.
+
+Điểm đáng ghi:
+
+- **Test ở đây phần lớn là khẳng định phủ định.** "Phần chèn được phát ra" mới là nửa test; nửa còn lại là "phần xoá thì không", và nửa thứ ba là "cả hai đều được đếm" — vì nhìn từ ngoài, một lần bỏ im lặng và một lần bỏ có ghi nhận trông giống hệt nhau nếu không ai đếm.
+- **Trạng thái field phải sống qua nhiều đoạn văn.** Một TOC mở ở đoạn này và đóng ở đoạn cách đó vài chục đoạn. Chỉ xét đoạn đang cầm thì giữ nguyên cả mục lục thành yêu cầu; quên pop thì **bỏ im lặng toàn bộ phần còn lại của tài liệu**. Có test cho cả hai chiều.
+- **`TOCHeading` cố tình không bị bỏ.** Nó là style của chính dòng chữ "Table of Contents" — một heading tài liệu thật sự có. Lọc theo tiền tố `TOC` sẽ nuốt nó.
+- **Chỉ mục đoạn văn được xây bằng `id()` của phần tử lxml, nên mọi phần tử đã đánh số đều được giữ sống.** lxml giải phóng proxy khi hết tham chiếu và cấp lại đúng địa chỉ đó cho proxy kế tiếp — một bản đồ theo `id()` sẽ bắt đầu trỏ sai đoạn, không báo gì. Cùng một cái bẫy đã có sẵn trong `tests/test_pandoc_oracle.py` và đã sửa luôn.
+- **Đoạn bị bỏ vẫn tiêu thụ số thứ tự của nó.** Chỉ mục trỏ vào *bản gốc*; đánh số lại quanh chỗ đã bỏ làm mọi issue lệch đi một đoạn so với thứ nó nói tới.
+
+Hai lỗi thật mà việc implement làm lộ ra, cả hai đều nằm ở **công cụ trọng tài**, không phải ở bộ đọc — ghi ở `G-data-contract.md` quyết định 15, quy tắc đã áp vào D v2.3:
+
+- **Phép đo độ trung thực đếm một text box thành ba đoạn nguồn**, trong đó một đoạn là hai nhánh `mc:Choice` và `mc:Fallback` dính liền nhau — một chuỗi không tồn tại ở đâu trong tài liệu, nên không bộ ghi nào phát ra được và nó vĩnh viễn nằm trong danh sách "chưa bao phủ". ACC-2 tụt khoảng một đoạn cho mỗi text box. Đây là F1 ở chiều ngược lại: con số bị bóp xuống bởi chính cách đếm.
+- **Test oracle so với pandoc không lọc mục lục**, trong khi §10.12 F2 nói mục lục ngoài phạm vi và §10.5 W4 bỏ nó có ghi nhận. Pandoc phát ra dòng mục lục như đoạn văn thường, nên khi `containers.docx` có mặt, test sẽ báo bộ đọc của ta "làm mất" đúng những dòng đặc tả bảo phải bỏ. Đã kiểm chứng bằng ba file dựng thay cho ba file Word chưa có: sau khi sửa, độ bao phủ 1.0000 trên cả ba và oracle không tìm ra đoạn nào pandoc lấy được mà ta không.
+
+**Còn chờ:** 6 test skip cho đến khi có `constructs.docx`, `revisions.docx`, `containers.docx` (xem mục 9). Chúng là các test chạy trên OOXML **Word thật sự ghi ra** — file dựng bằng XML chỉ chứng minh bộ đọc xử lý đúng cái OOXML mà ta tưởng tượng.
+
 ### F06 · Đánh số mục và số danh sách
 
 **Làm gì:** tính lại số mục ("3.2") và số thứ tự danh sách từ định nghĩa đánh số của Word, bằng cách duy trì bộ đếm theo từng cấp.

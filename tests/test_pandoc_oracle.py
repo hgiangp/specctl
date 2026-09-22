@@ -29,18 +29,100 @@ pytestmark = pytest.mark.skipif(not pandoc.available(), reason="pandoc is not in
 MIN_LONG_SEGMENT = 12  # §10.12 F8
 
 
+def _toc_paragraphs(root) -> set:
+    """Paragraphs a table of contents produced — out of scope per §10.12 F2.
+
+    The elements themselves are held, not their `id()`s: lxml frees an element proxy once
+    the last reference to it goes and can hand the same address to the next one, so a set
+    of `id()` values silently starts matching the wrong paragraphs. Holding the elements
+    keeps each proxy alive, which is also what makes the second pass see the same objects.
+
+    Computed here, from the XML, rather than asked of our walker: an oracle that took
+    our word for what is in scope would agree with us by construction and prove nothing.
+
+    Both spellings of §10.5 W4 are recognised, because Word writes both: a complex field
+    that opens in one paragraph and closes several paragraphs later, and the `TOC1`…`TOC9`
+    styles its result carries.
+    """
+    w = D.NS["w"]
+    out: set = set()
+    depth_is_toc: list[bool] = []
+    for paragraph in root.iter(f"{{{w}}}p"):
+        was_open = any(depth_is_toc)
+        opened = False
+        for node in paragraph.iter():
+            if node.tag == f"{{{w}}}fldChar":
+                kind = node.get(f"{{{w}}}fldCharType")
+                if kind == "begin":
+                    depth_is_toc.append(False)
+                elif kind == "end" and depth_is_toc:
+                    depth_is_toc.pop()
+            elif node.tag == f"{{{w}}}instrText" and depth_is_toc:
+                if (node.text or "").strip().upper().startswith("TOC"):
+                    depth_is_toc[-1] = True
+            elif node.tag == f"{{{w}}}fldSimple":
+                if (node.get(f"{{{w}}}instr") or "").strip().upper().startswith("TOC"):
+                    opened = True
+            opened = opened or any(depth_is_toc)
+        style = paragraph.find(f"{{{w}}}pPr/{{{w}}}pStyle")
+        styled = style is not None and re.match(
+            r"^TOC\s*\d+$", style.get(f"{{{w}}}val") or "", re.IGNORECASE
+        )
+        if was_open or opened or styled:
+            out.add(paragraph)
+    return out
+
+
+def _own_text(paragraph, w: str) -> str:
+    """A paragraph's own text, excluding any text box hanging inside it.
+
+    A text box's paragraphs are nested *within* the paragraph that anchors it, so a plain
+    join over `w:t` descendants folds the box's text into its anchor as well as counting
+    it on its own. Word writes a box twice besides — DrawingML under `mc:Choice`, VML
+    under `mc:Fallback` — so the naive reading turns one sentence into three segments, one
+    of which is the two branches concatenated and therefore matches nothing any writer
+    could ever emit. §10.12 F4 says that text counts once.
+    """
+    out: list[str] = []
+    for node in paragraph.iter(f"{{{w}}}t"):
+        nested = False
+        for ancestor in node.iterancestors():
+            if ancestor is paragraph:
+                break
+            if ancestor.tag == f"{{{w}}}txbxContent":
+                nested = True
+                break
+        if not nested:
+            out.append(node.text or "")
+    return "".join(out)
+
+
 def source_segments(path: Path) -> list[str]:
     """Paragraph text in the accepted-revision state, read straight from OOXML.
 
     Writer-independent by construction (§10.12 step 1), which is what lets one metric
     judge our reader and pandoc on equal terms.
+
+    The scope is §10.12 F2's — body, footnotes and text boxes — so table-of-contents
+    results are excluded. They are not an omission to be judged on: §10.5 W4 skips them
+    deliberately and §8.3 accounts every paragraph and character of them. Pandoc emits
+    them as ordinary paragraphs, so leaving them in would score a specified, counted skip
+    as lost text, and the one test that can prove a real walker bug would be red for a
+    reason that is not one.
     """
     w = D.NS["w"]
+    root = D.parse_part(path)
+    skip = _toc_paragraphs(root)
     out: list[str] = []
-    for paragraph in D.parse_part(path).iter(f"{{{w}}}p"):
-        if any(a.tag == f"{{{w}}}del" for a in paragraph.iterancestors()):
+    for paragraph in root.iter(f"{{{w}}}p"):
+        if paragraph in skip:
             continue
-        text = normalize("".join(t.text or "" for t in paragraph.iter(f"{{{w}}}t")))
+        ancestors = list(paragraph.iterancestors())
+        if any(a.tag == f"{{{w}}}del" for a in ancestors):
+            continue
+        if any(a.tag == f"{{{D.NS['mc']}}}Fallback" for a in ancestors):
+            continue          # the same box as mc:Choice, in the older spelling
+        text = normalize(_own_text(paragraph, w))
         if text:
             out.append(text)
     return out
@@ -190,3 +272,27 @@ def test_pandoc_handles_word_style_tracked_changes(tmp_path: Path) -> None:
     text = pandoc.convert(path).text
     assert "Inserted sentence here." in text
     assert "Deleted sentence here." not in text
+
+
+def test_a_text_box_is_one_source_segment_not_three(tmp_path: Path) -> None:
+    """§10.12 F4, on the side the metric is computed from.
+
+    Word writes a text box twice — DrawingML under `mc:Choice`, VML under `mc:Fallback`
+    — and nests both inside the paragraph that anchors it. Joining `w:t` descendants
+    per paragraph therefore yields the box's sentence three times, and one of those is
+    the two branches run together: a string no writer can ever emit, so it is counted as
+    lost for ever and the coverage number falls with every text box in the document.
+
+    Automotive specs put requirements in text boxes, so this is not a corner.
+    """
+    path = D.DocxPackage(
+        body=D.paragraph("An ordinary paragraph.")
+        + D.text_box("Requirement text living inside a text box.")
+    ).write(tmp_path / "textbox.docx")
+
+    segments = source_segments(path)
+
+    assert segments == [
+        "an ordinary paragraph.",
+        "requirement text living inside a text box.",
+    ]

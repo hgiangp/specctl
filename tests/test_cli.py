@@ -90,7 +90,7 @@ def test_missing_required_argument_exits_usage() -> None:
 # ---------------------------------------------------------------- command surface
 
 @pytest.mark.parametrize("args,feature", [
-    (("ingest", "x.docx"), "F05–F11"),
+    (("ingest", "x.docx"), "F06–F11"),
     (("fmt",), "F14"),
     (("validate",), "F16–F20"),
     (("assign-ids",), "F21"),

@@ -111,7 +111,7 @@ def ingest(
     out: Annotated[Path | None, typer.Option("--out", help="Vault directory.")] = None,
 ) -> None:
     """Convert the .docx into the Markdown vault (§10)."""
-    _todo("F05–F11", "ingest")
+    _todo("F06–F11", "ingest")
 
 
 @app.command()

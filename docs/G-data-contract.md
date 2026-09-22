@@ -295,3 +295,62 @@ Văn phạm §6.1 viết `heading-block = heading-line , { LF , content-line }`,
 Test mới kèm theo: T-ING-03b, T-ING-03c, T-VAL-06b, T-VAL-06c, T-VAL-07b, T-VAL-10, T-VAL-11, T-VAL-12, T-VAL-13.
 
 Trong đó **T-VAL-12** là test canh nguyên tắc: băm toàn bộ repo trước và sau mỗi lần gọi `validate` và mỗi lần gọi có `--check`, rồi so. Nó là cách duy nhất để quyết định 3 không bị xói mòn dần bằng những lần "ghi tạm một file cho tiện".
+
+---
+
+## Phần bổ sung — một lỗi phép đo phát hiện khi implement F05 (D v2.3)
+
+### Quyết định 15 — Phía nguồn của phép đo độ trung thực phải khử trùng lặp text box
+
+#### Vấn đề
+
+§10.12 bước 1 nói: "for p in every paragraph and table cell in scope". Đọc thẳng câu đó
+rồi gom `w:t` của từng đoạn thì **một text box chứa một câu sinh ra ba đoạn nguồn**:
+
+| Đoạn | Nội dung | Vì sao có |
+|---|---|---|
+| 1 | câu đó, **lặp hai lần dính liền nhau** | Đoạn *bọc ngoài* text box. Các đoạn bên trong box nằm lồng trong nó, nên phép gom `w:t` của đoạn ngoài nuốt luôn cả hai nhánh |
+| 2 | câu đó | Nhánh `mc:Choice` — DrawingML |
+| 3 | câu đó | Nhánh `mc:Fallback` — VML |
+
+Word ghi mọi text box theo đúng cách này, không phải ca hiếm.
+
+Đoạn 1 là chuỗi **không tồn tại ở bất kỳ đâu trong tài liệu**. Không bộ ghi nào phát ra
+được nó, nên nó vĩnh viễn nằm trong danh sách "chưa bao phủ". Hệ quả: ACC-2 tụt khoảng
+một đoạn cho mỗi text box, và danh sách `uncovered` của §10.12 F5 — thứ đáng ra phải
+hành động được — có một dòng mà không ai sửa được.
+
+Đây đúng là điều F1 cảnh báo, nhưng ở chiều ngược lại: không phải con số bị **thổi
+phồng**, mà bị **bóp xuống** bởi chính cách đếm. Cả hai đều làm con số mất nghĩa.
+
+#### Quyết định
+
+F4 nói "text phát ra hai lần đếm một lần ở phía nguồn". Câu đó đúng nhưng chưa đủ: nó nói
+về *kết quả*, không nói *cách tính*. Bổ sung vào F4 phần bắt buộc:
+
+- lấy **đúng một nhánh** của `mc:AlternateContent` — `mc:Choice`, không có thì `mc:Fallback`;
+- **loại** chữ nằm trong `w:txbxContent` ra khỏi phần chữ của đoạn bọc ngoài nó.
+
+Text box vì vậy đóng góp đúng một đoạn nguồn.
+
+#### Vì sao ghi lại thay vì sửa lặng lẽ
+
+Phát hiện này không nằm trong phạm vi F05 — nó là phép đo của F11. Nhưng nó lộ ra ở F05
+vì đây là lúc đầu tiên có một bộ đọc thật để so. Nếu không ghi lại, người làm F11 sẽ viết
+đúng cái vòng lặp ngây thơ mà §10.12 bước 1 gợi ý, rồi mất một ngày tìm xem tại sao độ
+bao phủ thấp hơn dự kiến trên tài liệu thật — mà nguyên nhân nằm ở phía nguồn, chỗ không
+ai nghĩ tới, vì phía nguồn "chỉ là đọc file gốc".
+
+Test đi kèm: `test_a_text_box_is_one_source_segment_not_three`.
+
+#### Một điểm nữa, cùng gốc — công cụ trọng tài phải dùng chung định nghĩa phạm vi
+
+`source_segments()` trong `tests/test_pandoc_oracle.py` không lọc mục lục, trong khi
+§10.12 F2 nói rõ mục lục **ngoài phạm vi** và §10.5 W4 bỏ nó có ghi nhận. Pandoc phát ra
+các dòng mục lục như đoạn văn thường, nên khi `containers.docx` có mặt, test oracle sẽ
+báo bộ đọc của ta "làm mất" đúng những dòng mà đặc tả bảo phải bỏ.
+
+Đã sửa: hàm đó nay dựng tập đoạn mục lục từ chính OOXML — cả hai dạng W4 nêu (field phức
+mở ở một đoạn và đóng ở đoạn sau, và style `TOC1`…`TOC9`). Tính độc lập với bộ ghi được
+giữ nguyên: nó **không** hỏi walker của ta cái gì trong phạm vi, vì một trọng tài lấy câu
+trả lời từ bên bị xử thì không chứng minh được gì.
